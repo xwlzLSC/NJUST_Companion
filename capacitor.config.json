@@ -1,0 +1,15 @@
+{
+  "appId": "com.njust.companion",
+  "appName": "NJUST Companion",
+  "webDir": "mobile-web",
+  "bundledWebRuntime": false,
+  "server": {
+    "androidScheme": "https",
+    "cleartext": true
+  },
+  "plugins": {
+    "CapacitorHttp": {
+      "enabled": true
+    }
+  }
+}

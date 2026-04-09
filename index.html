@@ -1,0 +1,291 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#2b6fd6">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="南理教务助手">
+  <meta name="description" content="南京理工大学课表、成绩、考试安排的本地离线查看工具">
+  <title>南理教务助手</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <header class="app-header">
+    <button id="header-left-btn" class="header-btn" onclick="handleHeaderLeftAction()" title="刷新当前页面">⟳</button>
+    <div class="header-meta">
+      <div class="header-kicker">NJUST Companion</div>
+      <div class="title" id="header-title">南理教务助手</div>
+    </div>
+    <button class="header-btn" onclick="navigate('settings')" title="打开设置">⚙</button>
+  </header>
+
+  <main class="page-content">
+
+    <section id="page-home" class="page active">
+      <div class="hero-panel">
+        <div class="hero-head">
+          <div class="hero-copy">
+            <div class="hero-week" id="hero-week">等待初始化</div>
+            <div class="hero-date" id="hero-date"></div>
+            <div class="hero-sub" id="hero-sub"></div>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-ghost btn-sm" onclick="syncNow()">立即同步</button>
+          </div>
+        </div>
+        <div class="hero-highlight" id="hero-highlight"></div>
+      </div>
+
+      <div class="quick-grid">
+        <button class="quick-card" onclick="navigate('schedule')">
+          <span class="quick-icon">📅</span>
+          <span class="quick-title">查看课表</span>
+          <span class="quick-desc">按周查看课程</span>
+        </button>
+        <button class="quick-card" onclick="navigate('grades')">
+          <span class="quick-icon">📊</span>
+          <span class="quick-title">成绩统计</span>
+          <span class="quick-desc">学期筛选与检索</span>
+        </button>
+        <button class="quick-card" onclick="navigate('exams')">
+          <span class="quick-icon">📝</span>
+          <span class="quick-title">考试安排</span>
+          <span class="quick-desc">倒计时与考场</span>
+        </button>
+        <button class="quick-card" onclick="navigate('classrooms')">
+          <span class="quick-icon">🏫</span>
+          <span class="quick-title">空闲教室</span>
+          <span class="quick-desc">按楼栋查询空房</span>
+        </button>
+        <button class="quick-card" onclick="navigate('sites')">
+          <span class="quick-icon">🔗</span>
+          <span class="quick-title">常用网站</span>
+          <span class="quick-desc">教务与学习入口</span>
+        </button>
+        <button class="quick-card" onclick="navigate('settings')">
+          <span class="quick-icon">☁️</span>
+          <span class="quick-title">同步中心</span>
+          <span class="quick-desc">登录、备份、设置</span>
+        </button>
+      </div>
+
+      <div class="section-title">接下来</div>
+      <div class="card" id="next-course-card"></div>
+
+      <div class="section-title">最近课程</div>
+      <div class="card">
+        <div id="home-lesson-list"></div>
+      </div>
+
+      <div class="section-title">近期考试</div>
+      <div id="home-exam-list"></div>
+
+      <div class="section-title">最近成绩</div>
+      <div class="card">
+        <div id="home-grade-list"></div>
+      </div>
+    </section>
+
+    <section id="page-schedule" class="page">
+      <div class="control-card schedule-control-card">
+        <div class="control-row">
+          <div>
+            <div class="control-label">课表查询</div>
+            <div class="control-value" id="selected-week-label">第 -- 周</div>
+            <div class="control-hint" id="schedule-week-hint">同步课表后可切换周次</div>
+          </div>
+          <div class="week-switcher" id="schedule-week-switcher">
+            <button class="week-arrow" onclick="changeSelectedWeek(-1)" title="上一周">‹</button>
+            <button class="week-arrow" onclick="resetSelectedWeek()" title="回到本周">•</button>
+            <button class="week-arrow" onclick="changeSelectedWeek(1)" title="下一周">›</button>
+          </div>
+        </div>
+        <div id="schedule-summary" class="schedule-summary"></div>
+      </div>
+      <div id="schedule-board"></div>
+      <div id="schedule-footer-bar" class="schedule-footer-bar"></div>
+    </section>
+
+    <section id="page-grades" class="page">
+      <div class="control-card">
+        <label class="control-label" for="grades-search">搜索课程</label>
+        <input class="search-input" id="grades-search" type="search" placeholder="输入课程名、学期或分数">
+        <div class="filter-row mt-12" id="grades-semester-filters"></div>
+      </div>
+      <div id="grades-content"></div>
+    </section>
+
+    <section id="page-exams" class="page">
+      <div class="control-card">
+        <div class="control-label">考试筛选</div>
+        <div class="filter-row mt-12" id="exam-filters"></div>
+      </div>
+      <div id="exams-content"></div>
+    </section>
+
+    <section id="page-classrooms" class="page">
+      <div id="classrooms-content"></div>
+    </section>
+
+    <section id="page-sites" class="page">
+      <div id="sites-content"></div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <div class="section-title">同步中心</div>
+      <div class="card">
+        <div class="setting-label">直接登录教务系统</div>
+        <div class="setting-desc" id="server-status-text">正在检测本地同步服务...</div>
+        <div class="server-auth-grid mt-12">
+          <input class="search-input" id="login-username" type="text" placeholder="学号 / 用户名">
+          <input class="search-input" id="login-password" type="password" placeholder="密码">
+          <div class="captcha-row" id="login-captcha-row">
+            <input class="search-input" id="login-captcha" type="text" maxlength="6" placeholder="验证码（选填）">
+            <img id="login-captcha-image" class="captcha-image" alt="验证码" onclick="refreshCaptcha()" />
+          </div>
+        </div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline" onclick="refreshCaptcha()">刷新验证码</button>
+          <button class="btn btn-primary" onclick="loginAndSync()">登录并同步</button>
+          <button class="btn btn-soft" onclick="syncNow()">手动同步</button>
+          <button class="btn btn-outline" onclick="logoutServer()">退出登录</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">学期开始日期</div>
+        <div class="setting-desc">用于自动计算当前周次，影响首页和课表页的显示。</div>
+        <div class="action-row mt-12">
+          <input class="date-input" type="date" id="setting-semester-start">
+          <button class="btn btn-primary" onclick="saveSemesterStart()">保存</button>
+        </div>
+      </div>
+
+      <div class="section-title">备用导入方案</div>
+      <div class="card">
+        <div class="setting-label">书签脚本导入</div>
+        <div class="setting-desc">
+          如果本地直连登录不可用，仍可通过浏览器打开教务系统页面后运行书签脚本导入。每次同步只更新当前模块，其他数据会自动保留。
+        </div>
+        <div class="sync-steps mt-12">
+          <div>1. 进入教务系统并完成登录。</div>
+          <div>2. 打开“课表 / 成绩 / 考试安排”其中一个页面。</div>
+          <div>3. 点击浏览器书签中的脚本，复制生成的 JSON。</div>
+          <div>4. 回到本应用，在“粘贴导入”中确认同步。</div>
+        </div>
+        <div class="code-block" id="bookmarklet-preview">点击下方按钮查看书签脚本预览。</div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline" onclick="showBookmarklet()">查看脚本</button>
+          <button class="btn btn-primary" onclick="copyBookmarklet()">复制脚本</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">示例数据</div>
+        <div class="setting-desc">用于快速体验界面，不会连接教务系统。</div>
+        <button class="btn btn-soft btn-block mt-12" onclick="loadSampleData()">加载示例数据</button>
+      </div>
+
+      <div class="card danger-card">
+        <div class="setting-label">清除本地缓存</div>
+        <div class="setting-desc">删除已保存的课表、成绩、考试和同步记录。</div>
+        <button class="btn btn-danger btn-block mt-12" onclick="clearData()">清除所有数据</button>
+      </div>
+
+      <div class="section-title">关于</div>
+      <div class="card">
+        <div class="setting-label">南理教务助手</div>
+        <div class="setting-desc">一个本地优先、可安装、可离线查看，并支持本机代理直连教务系统的南京理工大学教务数据平替方案。</div>
+        <div class="setting-desc mt-12">
+          为了避免把账号密码交给第三方服务器，浏览器版的直连登录由你自己的电脑本地 Node 服务完成；安卓安装包则改为手机本机原生联网同步，前端只负责展示与缓存。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="home">
+      <span class="nav-icon">🏠</span>
+      <span>首页</span>
+    </button>
+    <button class="nav-item" data-page="schedule">
+      <span class="nav-icon">📅</span>
+      <span>课表</span>
+    </button>
+    <button class="nav-item" data-page="grades">
+      <span class="nav-icon">📊</span>
+      <span>成绩</span>
+    </button>
+    <button class="nav-item" data-page="exams">
+      <span class="nav-icon">📝</span>
+      <span>考试</span>
+    </button>
+    <button class="nav-item" data-page="settings">
+      <span class="nav-icon">⚙️</span>
+      <span>设置</span>
+    </button>
+  </nav>
+
+</div>
+
+<div class="modal-overlay" id="import-modal" onclick="if(event.target===this) closeImportModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">导入同步数据</div>
+    <div class="modal-desc">
+      支持两种内容：1）书签脚本从教务页面复制的单模块 JSON；2）本应用导出的整份备份。导入时会自动合并，不会把其他模块清空。
+    </div>
+    <textarea
+      class="import-area"
+      id="import-textarea"
+      placeholder='粘贴 JSON 数据，例如：
+{
+  "meta": {"type": "schedule"},
+  "schedule": [...]
+}'
+    ></textarea>
+    <div class="action-row">
+      <button class="btn btn-outline" onclick="pasteIntoImportArea()">从剪贴板读取</button>
+      <button class="btn btn-primary" onclick="importData()">确认导入</button>
+    </div>
+    <button class="btn btn-text btn-block mt-12" onclick="closeImportModal()">取消</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="course-detail-modal" onclick="if(event.target===this) closeScheduleDetail()">
+  <div class="modal-sheet course-detail-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div id="course-detail-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="grade-help-modal" onclick="if(event.target===this) closeGradeHelp()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">成绩帮助</div>
+    <div class="modal-desc">
+      1. 英语课默认不勾选：多数学院英语课程更偏向奖学金统计，保研更常看四六级最高分；所以初始会优先勾选非英语必修课，你也可以手动改。<br><br>
+      2. 四六级计入规则：默认取 CET4 / CET6 历次中的最高总分，按 `总分 ÷ 710 × 100` 换算成百分制，再按 `8 学分` 计入“已选+四六级”。<br><br>
+      3. 文本成绩换算：及格=60，中等=70，良好=80，优秀=90；同时兼容 `优- / 良+ / 良` 这类成绩。<br><br>
+      4. 绩点公式：`<60=0.0`，`<64=1.0`，`<68=1.5`，`<72=2.0`，`<75=2.3`，`<78=2.7`，`<82=3.0`，`<85=3.3`，`<90=3.7`，`>=90=4.0`。
+    </div>
+    <button class="btn btn-primary btn-block mt-12" onclick="closeGradeHelp()">知道了</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script src="./js/capacitor.js"></script>
+<script src="./js/parser.js"></script>
+<script src="./js/native-sync.js"></script>
+<script src="./js/app.js"></script>
+</body>
+</html>
