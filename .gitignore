@@ -1,0 +1,17 @@
+node_modules/
+mobile-web/
+storage/
+
+.tmp-*.html
+.tmp-*.js
+*.log
+
+eng.traineddata
+
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+
+*.keystore
+*.jks
