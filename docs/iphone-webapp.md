@@ -56,9 +56,29 @@ PUBLIC_ORIGIN=https://your-domain.example
 
 ## 推荐部署方式
 
-### 方案 A：Linux 服务器 + Node + Caddy
+### 方案 A：Render 托管 Node 服务
 
-这是最省事的一种。
+这是现在最省事的路线，适合“没有自己的服务器，只想点几下部署”的场景。
+
+直接看：
+
+- [Render 托管部署说明](./render-deploy.md)
+
+这条路线的结构是：
+
+```text
+iPhone Safari -> Render HTTPS 地址 -> 你的 Node 服务 -> 教务系统
+```
+
+注意：
+
+- 这是个人实例方案
+- 当前后端还是单实例单账号状态，不适合多人共用
+- 因为需要持久化登录态和缓存，所以会用到 Render 的付费 web service + persistent disk
+
+### 方案 B：自己维护 Linux 服务器 + Node + Caddy
+
+如果你以后愿意自己维护服务器，再走这条。
 
 准备：
 

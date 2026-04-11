@@ -15,7 +15,11 @@ loadEnvFile(path.join(ROOT_DIR, '.env'));
 
 const HOST = process.env.HOST || '0.0.0.0';
 const PORT = Number(process.env.PORT || 3030);
-const PUBLIC_ORIGIN = String(process.env.PUBLIC_ORIGIN || '').trim();
+const PUBLIC_ORIGIN = String(
+  process.env.PUBLIC_ORIGIN
+  || process.env.RENDER_EXTERNAL_URL
+  || ''
+).trim();
 const TRUST_PROXY = /^(1|true|yes)$/i.test(String(process.env.TRUST_PROXY || ''));
 const STORAGE_DIR = path.resolve(process.env.APP_STORAGE_DIR || path.join(ROOT_DIR, 'storage'));
 const STATE_FILE = path.join(STORAGE_DIR, 'server-state.json');

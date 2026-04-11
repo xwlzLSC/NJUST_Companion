@@ -4,6 +4,23 @@
 
 当前教务登录入口以学校实际可访问地址为准，默认适配的是 `http://202.119.81.113:8080/`。
 
+## 最省事的托管后端
+
+如果你没有自己的服务器，当前最省事的方案是把这个项目部署成一个 `Render` 托管的个人后端实例，再用 iPhone Safari “添加到主屏幕”。
+
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/xwlzLSC/NJUST_Companion)
+
+先看这两份文档：
+
+- [Render 托管部署说明](./docs/render-deploy.md)
+- [iPhone 网页方式说明](./docs/iphone-webapp.md)
+
+需要明确一点：
+
+- 当前后端是 `单实例 / 单账号` 结构
+- 最适合“你自己部署、你自己使用”
+- 不适合直接公开成多人共用服务
+
 ## 功能
 
 - 课表
@@ -159,6 +176,7 @@ android/app/build/outputs/apk/debug/app-debug.apk
 
 ## 文档
 
+- [Render 托管部署说明](./docs/render-deploy.md)
 - [服务器部署说明](./docs/deploy-server.md)
 - [iPhone 网页方式说明](./docs/iphone-webapp.md)
 

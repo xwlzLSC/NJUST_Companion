@@ -1,0 +1,26 @@
+services:
+  - type: web
+    name: njust-companion
+    runtime: node
+    plan: starter
+    region: singapore
+    autoDeployTrigger: off
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: APP_STORAGE_DIR
+        value: /var/data/storage
+      - key: AUTO_SYNC_INTERVAL_MS
+        value: "600000"
+      - key: KEEP_ALIVE_INTERVAL_MS
+        value: "480000"
+    disk:
+      name: storage
+      mountPath: /var/data
+      sizeGB: 1
