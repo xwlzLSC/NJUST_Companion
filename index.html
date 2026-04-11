@@ -165,6 +165,7 @@
 
     <section id="page-settings" class="page">
       <div class="section-title">同步中心</div>
+      <div id="settings-login-guide"></div>
       <div class="card">
         <div class="setting-label">直接登录教务系统</div>
         <div class="setting-desc" id="server-status-text">正在检测本地同步服务...</div>
@@ -181,6 +182,7 @@
           <button class="btn btn-primary" onclick="loginAndSync()">登录并同步</button>
           <button class="btn btn-soft" onclick="syncNow()">手动同步</button>
           <button class="btn btn-outline" onclick="logoutServer()">退出登录</button>
+          <button class="btn btn-soft" onclick="openUsageGuide()">使用说明</button>
         </div>
       </div>
 
@@ -514,6 +516,59 @@
     <div class="action-row mt-12">
       <button class="btn btn-outline" onclick="closeSharePreviewModal()">关闭</button>
       <button class="btn btn-primary" id="share-save-btn">💾 保存图片</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="usage-guide-modal" onclick="if(event.target===this) closeUsageGuide()">
+  <div class="modal-sheet guide-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">使用说明</div>
+    <div class="modal-desc">
+      这是一份给新用户的快速上手说明。账号填教务系统账号，密码填教务处密码，通常初始密码就是学号；如果你已经改过密码，就填修改后的教务密码。校园网认证是另一组账号密码，不要和教务登录混淆。
+    </div>
+
+    <div class="guide-hero mt-12">
+      <div class="guide-hero-icon">📚</div>
+      <div class="guide-hero-copy">
+        <strong>先登录，再设置学期开始日</strong>
+        <span>登录成功后，课表周次、首页提示和后续同步会更准确。</span>
+      </div>
+    </div>
+
+    <div class="guide-grid mt-12">
+      <div class="guide-card">
+        <div class="guide-card-icon">🪪</div>
+        <strong>1. 输入账号</strong>
+        <span>一般填学号或教务系统用户名。</span>
+      </div>
+      <div class="guide-card">
+        <div class="guide-card-icon">🔑</div>
+        <strong>2. 输入密码</strong>
+        <span>填教务处密码，初始密码常见为学号。</span>
+      </div>
+      <div class="guide-card">
+        <div class="guide-card-icon">📅</div>
+        <strong>3. 设置学期开始日</strong>
+        <span>登录后到设置页填写，周次才会自动算对。</span>
+      </div>
+      <div class="guide-card">
+        <div class="guide-card-icon">🔄</div>
+        <strong>4. 登录并同步</strong>
+        <span>同步后会保存课表、成绩和考试到本机缓存。</span>
+      </div>
+    </div>
+
+    <div class="guide-note mt-12">
+      <strong>常见提醒</strong>
+      <div>• 登录失败先确认验证码是否刷新，再重新输入。</div>
+      <div>• 如果登录成功但课表周次不对，优先检查“学期开始日期”。</div>
+      <div>• 通知、待办和桌面组件都在设置页，登录后也可以随时查看。</div>
+    </div>
+
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="closeUsageGuide()">关闭</button>
+      <button class="btn btn-primary" onclick="closeUsageGuide(); navigate('settings'); document.getElementById('settings-wifi-card')?.scrollIntoView({behavior:'smooth', block:'start'});">去登录</button>
     </div>
   </div>
 </div>

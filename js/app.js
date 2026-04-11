@@ -1095,6 +1095,48 @@ function renderServerStatus() {
   }
 }
 
+function buildSettingsLoginGuideHtml() {
+  if (state.server.loggedIn) return '';
+  return `
+    <div class="card guide-inline-card">
+      <div class="guide-inline-head">
+        <div>
+          <div class="setting-label">新手提示</div>
+          <div class="setting-desc">
+            账号一般填学号或教务系统用户名，密码填教务处密码，初始密码常见为学号。登录成功后，这个提示会自动隐藏。
+          </div>
+        </div>
+        <button class="btn btn-soft btn-sm" type="button" onclick="openUsageGuide()">查看完整说明</button>
+      </div>
+      <div class="guide-inline-grid mt-12">
+        <div class="guide-inline-step">
+          <span>🪪</span>
+          <strong>账号</strong>
+          <small>输入学号 / 教务系统账号</small>
+        </div>
+        <div class="guide-inline-step">
+          <span>🔑</span>
+          <strong>密码</strong>
+          <small>输入教务处密码，默认常为学号</small>
+        </div>
+        <div class="guide-inline-step">
+          <span>📅</span>
+          <strong>学期开始日</strong>
+          <small>登录后去设置页填写</small>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
+function openUsageGuide() {
+  document.getElementById('usage-guide-modal')?.classList.add('open');
+}
+
+function closeUsageGuide() {
+  document.getElementById('usage-guide-modal')?.classList.remove('open');
+}
+
 async function refreshServerStatus({ silent = false, check = false } = {}) {
   try {
     const previousImportedAt = state.data.meta.importedAt;
@@ -3235,6 +3277,11 @@ function renderSites() {
 }
 
 function renderSettings() {
+  const loginGuide = document.getElementById('settings-login-guide');
+  if (loginGuide) {
+    loginGuide.innerHTML = buildSettingsLoginGuideHtml();
+  }
+
   const usernameInput = document.getElementById('login-username');
   if (usernameInput && !usernameInput.value && state.server.username) {
     usernameInput.value = state.server.username;
@@ -3996,6 +4043,7 @@ function bindStaticEvents() {
     closeCustomCourseModal();
     closeTodoModal();
     closeGradeHelp();
+    closeUsageGuide();
   });
 }
 
