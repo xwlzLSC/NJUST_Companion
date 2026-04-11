@@ -1,0 +1,32 @@
+{
+  "name": "njust-companion",
+  "version": "2.0.0",
+  "private": true,
+  "description": "南京理工大学教务助手，本地代理登录与自动同步版",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "start:prod": "node server.js",
+    "check": "node --check server.js && node --check js/app.js && node --check js/features.js && node --check js/parser.js && node --check js/native-sync.js",
+    "build:android:web": "node scripts/prepare-capacitor-web.cjs",
+    "android:add": "npm run build:android:web && npx cap add android",
+    "android:sync": "npm run build:android:web && npx cap sync android",
+    "apk:debug": "node scripts/build-android-debug.cjs"
+  },
+  "dependencies": {
+    "@capacitor/android": "^8.3.0",
+    "@capacitor/cli": "^8.3.0",
+    "@capacitor/core": "^8.3.0",
+    "@capacitor/filesystem": "^8.1.2",
+    "@capacitor/ios": "^8.3.0",
+    "@capacitor/local-notifications": "^8.0.2",
+    "@capacitor/share": "^8.0.1",
+    "axios": "^1.11.0",
+    "axios-cookiejar-support": "^6.0.4",
+    "express": "^5.1.0",
+    "jimp": "^1.6.1",
+    "jsdom": "^26.1.0",
+    "tesseract.js": "^7.0.0",
+    "tough-cookie": "^5.1.2"
+  }
+}

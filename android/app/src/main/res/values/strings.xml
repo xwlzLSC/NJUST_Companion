@@ -1,0 +1,15 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NJUST Companion</string>
+    <string name="title_activity_main">NJUST Companion</string>
+    <string name="package_name">com.njust.companion</string>
+    <string name="custom_url_scheme">com.njust.companion</string>
+    <string name="widget_schedule_name">南理课程表</string>
+    <string name="widget_todos_name">南理待办</string>
+    <string name="widget_exams_name">南理考试</string>
+    <string name="widget_overview_name">南理总览</string>
+    <string name="widget_schedule_desc">显示下节课和今日课程</string>
+    <string name="widget_todos_desc">显示最近待办事件</string>
+    <string name="widget_exams_desc">显示近期考试安排</string>
+    <string name="widget_overview_desc">显示课程、待办和考试总览</string>
+</resources>

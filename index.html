@@ -1,0 +1,527 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
+  <meta name="theme-color" content="#2b6fd6">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="南理教务助手">
+  <meta name="description" content="南京理工大学课表、成绩、考试安排的本地离线查看工具">
+  <title>南理教务助手</title>
+  <link rel="manifest" href="./manifest.json">
+  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="stylesheet" href="./css/app.css">
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+<div id="app">
+
+  <header class="app-header">
+    <button id="header-left-btn" class="header-btn" onclick="handleHeaderLeftAction()" title="刷新当前页面">⟳</button>
+    <div class="header-meta">
+      <div class="header-kicker">NJUST Companion</div>
+      <div class="title" id="header-title">南理教务助手</div>
+    </div>
+    <button class="header-btn" onclick="navigate('settings')" title="打开设置">⚙</button>
+  </header>
+
+  <main class="page-content">
+
+    <section id="page-home" class="page active">
+      <div class="hero-panel">
+        <div class="hero-head">
+          <div class="hero-copy">
+            <div class="hero-week" id="hero-week">等待初始化</div>
+            <div class="hero-date" id="hero-date"></div>
+            <div class="hero-sub" id="hero-sub"></div>
+          </div>
+          <div class="hero-actions">
+            <button class="btn btn-ghost btn-sm" onclick="syncNow()">立即同步</button>
+          </div>
+        </div>
+        <div class="hero-highlight" id="hero-highlight"></div>
+      </div>
+
+      <div class="quick-grid">
+        <button class="quick-card" onclick="navigate('schedule')">
+          <span class="quick-icon">📅</span>
+          <span class="quick-title">查看课表</span>
+          <span class="quick-desc">按周查看课程</span>
+        </button>
+        <button class="quick-card" onclick="navigate('grades')">
+          <span class="quick-icon">📊</span>
+          <span class="quick-title">成绩统计</span>
+          <span class="quick-desc">学期筛选与检索</span>
+        </button>
+        <button class="quick-card" onclick="navigate('exams')">
+          <span class="quick-icon">📝</span>
+          <span class="quick-title">考试安排</span>
+          <span class="quick-desc">倒计时与考场</span>
+        </button>
+        <button class="quick-card" onclick="navigate('classrooms')">
+          <span class="quick-icon">🏫</span>
+          <span class="quick-title">空闲教室</span>
+          <span class="quick-desc">按楼栋查询空房</span>
+        </button>
+        <button class="quick-card" onclick="navigate('sites')">
+          <span class="quick-icon">🔗</span>
+          <span class="quick-title">常用网站</span>
+          <span class="quick-desc">教务与学习入口</span>
+        </button>
+        <button class="quick-card" onclick="navigate('todos')">
+          <span class="quick-icon">✅</span>
+          <span class="quick-title">待办事件</span>
+          <span class="quick-desc">自定义提醒事项</span>
+        </button>
+        <button class="quick-card" onclick="navigate('settings')">
+          <span class="quick-icon">☁️</span>
+          <span class="quick-title">同步中心</span>
+          <span class="quick-desc">登录、备份、设置</span>
+        </button>
+        <button class="quick-card" onclick="openCampusAuthShortcut()">
+          <span class="quick-icon">🔐</span>
+          <span class="quick-title">校园网</span>
+          <span class="quick-desc">一键认证入口</span>
+        </button>
+      </div>
+
+      <div id="semester-countdown-bar" hidden></div>
+
+      <div class="section-title">接下来</div>
+      <div class="card" id="next-course-card"></div>
+
+      <div class="section-title">最近课程</div>
+      <div class="card">
+        <div id="home-lesson-list"></div>
+      </div>
+
+      <div class="section-title">近期考试</div>
+      <div id="home-exam-list"></div>
+
+      <div class="section-title">最近成绩</div>
+      <div class="card">
+        <div id="home-grade-list"></div>
+      </div>
+    </section>
+
+    <section id="page-schedule" class="page">
+      <div class="control-card schedule-control-card">
+        <div class="control-row">
+          <div>
+            <div class="control-label">课表查询</div>
+            <div class="control-value" id="selected-week-label">第 -- 周</div>
+            <div class="control-hint" id="schedule-week-hint">同步课表后可切换周次</div>
+          </div>
+          <div class="week-switcher" id="schedule-week-switcher">
+            <button class="week-arrow" onclick="changeSelectedWeek(-1)" title="上一周">‹</button>
+            <button class="week-arrow" onclick="resetSelectedWeek()" title="回到本周">•</button>
+            <button class="week-arrow" onclick="changeSelectedWeek(1)" title="下一周">›</button>
+          </div>
+        </div>
+        <div class="action-row mt-12">
+          <button class="btn btn-primary btn-sm" onclick="openCustomCourseModal()">添加课程</button>
+          <button class="btn btn-outline btn-sm" onclick="openTodoModal()">新建待办</button>
+          <button class="btn btn-soft btn-sm" onclick="exportToICS()" title="导出到系统日历">📅 日历</button>
+          <button class="btn btn-soft btn-sm" onclick="openScheduleBgModal()" title="设置课表壁纸">🎨 壁纸</button>
+          <button class="btn btn-soft btn-sm" onclick="generateShareImage()" title="生成分享图">📸 分享</button>
+        </div>
+        <div id="schedule-summary" class="schedule-summary"></div>
+      </div>
+      <div id="schedule-board"></div>
+      <div id="schedule-footer-bar" class="schedule-footer-bar"></div>
+    </section>
+
+    <section id="page-grades" class="page">
+      <div class="control-card">
+        <label class="control-label" for="grades-search">搜索课程</label>
+        <input class="search-input" id="grades-search" type="search" placeholder="输入课程名、学期或分数">
+        <div class="filter-row mt-12" id="grades-semester-filters"></div>
+      </div>
+      <div id="predict-panel-container"></div>
+      <div id="grades-content"></div>
+    </section>
+
+    <section id="page-exams" class="page">
+      <div class="control-card">
+        <div class="control-label">考试筛选</div>
+        <div class="filter-row mt-12" id="exam-filters"></div>
+      </div>
+      <div id="exams-content"></div>
+    </section>
+
+    <section id="page-classrooms" class="page">
+      <div id="classrooms-content"></div>
+    </section>
+
+    <section id="page-sites" class="page">
+      <div id="sites-content"></div>
+    </section>
+
+    <section id="page-todos" class="page">
+      <div id="todos-content"></div>
+    </section>
+
+    <section id="page-settings" class="page">
+      <div class="section-title">同步中心</div>
+      <div class="card">
+        <div class="setting-label">直接登录教务系统</div>
+        <div class="setting-desc" id="server-status-text">正在检测本地同步服务...</div>
+        <div class="server-auth-grid mt-12">
+          <input class="search-input" id="login-username" type="text" placeholder="学号 / 用户名">
+          <input class="search-input" id="login-password" type="password" placeholder="密码">
+          <div class="captcha-row" id="login-captcha-row">
+            <input class="search-input" id="login-captcha" type="text" maxlength="6" placeholder="验证码（选填）">
+            <img id="login-captcha-image" class="captcha-image" alt="验证码" onclick="refreshCaptcha()" />
+          </div>
+        </div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline" onclick="refreshCaptcha()">刷新验证码</button>
+          <button class="btn btn-primary" onclick="loginAndSync()">登录并同步</button>
+          <button class="btn btn-soft" onclick="syncNow()">手动同步</button>
+          <button class="btn btn-outline" onclick="logoutServer()">退出登录</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">学期开始日期</div>
+        <div class="setting-desc">用于自动计算当前周次，影响首页和课表页的显示。</div>
+        <div class="action-row mt-12">
+          <input class="date-input" type="date" id="setting-semester-start">
+          <button class="btn btn-primary" onclick="saveSemesterStart()">保存</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">消息通知</div>
+        <div class="setting-desc">开启后会在安卓手机上提醒下节课、待办事件和成绩更新。提醒依赖系统通知权限。</div>
+        <div class="setting-list mt-12">
+          <label class="switch-row">
+            <span>
+              <strong>启用通知</strong>
+              <small>允许应用安排本地提醒</small>
+            </span>
+            <input type="checkbox" id="notify-enabled" onchange="updateNotificationSetting('enabled', this.checked)">
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>课程提醒</strong>
+              <small>在上课前提醒下一节课</small>
+            </span>
+            <input type="checkbox" id="notify-courses" onchange="updateNotificationSetting('courseReminders', this.checked)">
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>待办提醒</strong>
+              <small>提醒你自己创建的待办事件</small>
+            </span>
+            <input type="checkbox" id="notify-todos" onchange="updateNotificationSetting('todoReminders', this.checked)">
+          </label>
+          <label class="switch-row">
+            <span>
+              <strong>成绩更新提醒</strong>
+              <small>同步后发现新成绩会提示</small>
+            </span>
+            <input type="checkbox" id="notify-grades" onchange="updateNotificationSetting('gradeReminders', this.checked)">
+          </label>
+          <label class="setting-inline-field">
+            <span>提前提醒</span>
+            <select id="notify-lead-minutes" onchange="updateNotificationSetting('leadMinutes', this.value)">
+              <option value="10">10 分钟</option>
+              <option value="20">20 分钟</option>
+              <option value="30">30 分钟</option>
+              <option value="45">45 分钟</option>
+              <option value="60">60 分钟</option>
+            </select>
+          </label>
+        </div>
+        <div class="setting-desc mt-12" id="notify-status-text">正在检查通知权限...</div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline btn-sm" type="button" onclick="refreshNotificationStatus()">刷新状态</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">桌面组件</div>
+        <div class="setting-desc">可把课程表、待办、考试或总览添加到安卓桌面。添加前会先刷新一次组件数据。</div>
+        <div class="widget-action-grid mt-12">
+          <button class="widget-action" type="button" onclick="pinHomeWidget('schedule')">
+            <span>📅</span>
+            <strong>课程表</strong>
+          </button>
+          <button class="widget-action" type="button" onclick="pinHomeWidget('todos')">
+            <span>✅</span>
+            <strong>待办</strong>
+          </button>
+          <button class="widget-action" type="button" onclick="pinHomeWidget('exams')">
+            <span>📝</span>
+            <strong>考试</strong>
+          </button>
+          <button class="widget-action" type="button" onclick="pinHomeWidget('overview')">
+            <span>🏠</span>
+            <strong>总览</strong>
+          </button>
+        </div>
+        <button class="btn btn-soft btn-block mt-12" type="button" onclick="updateNativeWidgetData()">刷新组件数据</button>
+        <div class="install-tip mt-12">如果手机桌面不支持一键添加，请长按桌面空白处，进入“小组件 / 桌面组件”，选择 NJUST Companion。</div>
+      </div>
+
+      <div class="section-title">校园网</div>
+      <div class="card" id="settings-wifi-card">
+        <div class="setting-label">🔐 校园网一键认证</div>
+        <div class="setting-desc">此处账号密码为校园网认证账号（与教务系统账号<strong>不同</strong>，通常是学号+初始密码）。填写后点击认证会打开认证页面并提示账号。</div>
+        <div id="wifi-auth-status" class="setting-desc" style="color:var(--color-accent,#4f8ef7);margin-top:4px;"></div>
+        <div class="server-auth-grid mt-12">
+          <input class="search-input" id="wifi-username" type="text" placeholder="校园网账号（通常为学号）">
+          <input class="search-input" id="wifi-password" type="password" placeholder="校园网密码（必填）">
+        </div>
+        <div class="action-row mt-12">
+          <button class="btn btn-primary" onclick="authenticateWifi()">🌐 打开认证页</button>
+          <button class="btn btn-outline" onclick="openWifiAuthPage()">直接跳转</button>
+        </div>
+      </div>
+
+      <div class="section-title">备用导入方案</div>
+      <div class="card">
+        <div class="setting-label">书签脚本导入</div>
+        <div class="setting-desc">
+          如果本地直连登录不可用，仍可通过浏览器打开教务系统页面后运行书签脚本导入。每次同步只更新当前模块，其他数据会自动保留。
+        </div>
+        <div class="sync-steps mt-12">
+          <div>1. 进入教务系统并完成登录。</div>
+          <div>2. 打开“课表 / 成绩 / 考试安排”其中一个页面。</div>
+          <div>3. 点击浏览器书签中的脚本，复制生成的 JSON。</div>
+          <div>4. 回到本应用，在“粘贴导入”中确认同步。</div>
+        </div>
+        <div class="code-block" id="bookmarklet-preview">点击下方按钮查看书签脚本预览。</div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline" onclick="showBookmarklet()">查看脚本</button>
+          <button class="btn btn-primary" onclick="copyBookmarklet()">复制脚本</button>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="setting-label">示例数据</div>
+        <div class="setting-desc">用于快速体验界面，不会连接教务系统。</div>
+        <button class="btn btn-soft btn-block mt-12" onclick="loadSampleData()">加载示例数据</button>
+      </div>
+
+      <div class="card danger-card">
+        <div class="setting-label">清除本地缓存</div>
+        <div class="setting-desc">删除已保存的课表、成绩、考试和同步记录。</div>
+        <button class="btn btn-danger btn-block mt-12" onclick="clearData()">清除所有数据</button>
+      </div>
+
+      <div class="section-title">关于</div>
+      <div class="card">
+        <div class="setting-label">南理教务助手</div>
+        <div class="setting-desc">一个本地优先、可安装、可离线查看，并支持本机代理直连教务系统的南京理工大学教务数据平替方案。</div>
+        <div class="setting-desc mt-12">
+          为了避免把账号密码交给第三方服务器，浏览器版的直连登录由你自己的电脑本地 Node 服务完成；安卓安装包则改为手机本机原生联网同步，前端只负责展示与缓存。
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <nav class="bottom-nav">
+    <button class="nav-item active" data-page="home">
+      <span class="nav-icon">🏠</span>
+      <span>首页</span>
+    </button>
+    <button class="nav-item" data-page="schedule">
+      <span class="nav-icon">📅</span>
+      <span>课表</span>
+    </button>
+    <button class="nav-item" data-page="grades">
+      <span class="nav-icon">📊</span>
+      <span>成绩</span>
+    </button>
+    <button class="nav-item" data-page="exams">
+      <span class="nav-icon">📝</span>
+      <span>考试</span>
+    </button>
+    <button class="nav-item" data-page="settings">
+      <span class="nav-icon">⚙️</span>
+      <span>设置</span>
+    </button>
+  </nav>
+
+</div>
+
+<div class="modal-overlay" id="import-modal" onclick="if(event.target===this) closeImportModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">导入同步数据</div>
+    <div class="modal-desc">
+      支持两种内容：1）书签脚本从教务页面复制的单模块 JSON；2）本应用导出的整份备份。导入时会自动合并，不会把其他模块清空。
+    </div>
+    <textarea
+      class="import-area"
+      id="import-textarea"
+      placeholder='粘贴 JSON 数据，例如：
+{
+  "meta": {"type": "schedule"},
+  "schedule": [...]
+}'
+    ></textarea>
+    <div class="action-row">
+      <button class="btn btn-outline" onclick="pasteIntoImportArea()">从剪贴板读取</button>
+      <button class="btn btn-primary" onclick="importData()">确认导入</button>
+    </div>
+    <button class="btn btn-text btn-block mt-12" onclick="closeImportModal()">取消</button>
+  </div>
+</div>
+
+<div class="modal-overlay" id="course-detail-modal" onclick="if(event.target===this) closeScheduleDetail()">
+  <div class="modal-sheet course-detail-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div id="course-detail-content"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="custom-course-modal" onclick="if(event.target===this) closeCustomCourseModal()">
+  <div class="modal-sheet form-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">添加自定义课程</div>
+    <div class="modal-desc">自定义课程只保存在本机，不会覆盖教务处同步课表。</div>
+    <div class="form-grid">
+      <input class="search-input" id="custom-course-name" type="text" placeholder="课程名称">
+      <input class="search-input" id="custom-course-room" type="text" placeholder="上课地点">
+      <input class="search-input" id="custom-course-teacher" type="text" placeholder="任课教师">
+      <input class="search-input" id="custom-course-credit" type="number" min="0" step="0.5" placeholder="学分">
+      <select class="search-input" id="custom-course-weekday">
+        <option value="1">周一</option>
+        <option value="2">周二</option>
+        <option value="3">周三</option>
+        <option value="4">周四</option>
+        <option value="5">周五</option>
+        <option value="6">周六</option>
+        <option value="7">周日</option>
+      </select>
+      <select class="search-input" id="custom-course-odd-even">
+        <option value="">每周</option>
+        <option value="单">单周</option>
+        <option value="双">双周</option>
+      </select>
+      <input class="search-input" id="custom-course-start-period" type="number" min="1" max="14" placeholder="开始节次">
+      <input class="search-input" id="custom-course-end-period" type="number" min="1" max="14" placeholder="结束节次">
+      <input class="search-input" id="custom-course-start-week" type="number" min="1" max="30" placeholder="开始周">
+      <input class="search-input" id="custom-course-end-week" type="number" min="1" max="30" placeholder="结束周">
+    </div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="closeCustomCourseModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveCustomCourse()">保存课程</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="todo-modal" onclick="if(event.target===this) closeTodoModal()">
+  <div class="modal-sheet form-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">新建待办事件</div>
+    <div class="modal-desc">待办可以设置时间提醒，开启通知后会自动安排本地通知。</div>
+    <div class="form-grid">
+      <input class="search-input form-span-2" id="todo-title" type="text" placeholder="待办标题">
+      <input class="search-input" id="todo-date" type="date">
+      <input class="search-input" id="todo-time" type="time">
+      <select class="search-input" id="todo-remind-minutes">
+        <option value="0">准时提醒</option>
+        <option value="10">提前 10 分钟</option>
+        <option value="30">提前 30 分钟</option>
+        <option value="60">提前 1 小时</option>
+        <option value="1440">提前 1 天</option>
+      </select>
+      <select class="search-input" id="todo-linked-course">
+        <option value="">不关联课程</option>
+      </select>
+      <textarea class="import-area form-span-2" id="todo-note" rows="4" placeholder="备注，可选"></textarea>
+    </div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="closeTodoModal()">取消</button>
+      <button class="btn btn-primary" onclick="saveTodo()">保存待办</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="grade-help-modal" onclick="if(event.target===this) closeGradeHelp()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">成绩帮助</div>
+    <div class="modal-desc">
+      1. 英语课默认不勾选：多数学院英语课程更偏向奖学金统计，保研更常看四六级最高分；所以初始会优先勾选非英语必修课，你也可以手动改。<br><br>
+      2. 四六级计入规则：默认取 CET4 / CET6 历次中的最高总分，按 `总分 ÷ 710 × 100` 换算成百分制，再按 `8 学分` 计入“已选+四六级”。<br><br>
+      3. 文本成绩换算：及格=60，中等=70，良好=80，优秀=90；同时兼容 `优- / 良+ / 良` 这类成绩。<br><br>
+      4. 绩点公式：`<60=0.0`，`<64=1.0`，`<68=1.5`，`<72=2.0`，`<75=2.3`，`<78=2.7`，`<82=3.0`，`<85=3.3`，`<90=3.7`，`>=90=4.0`。
+    </div>
+    <button class="btn btn-primary btn-block mt-12" onclick="closeGradeHelp()">知道了</button>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<!-- ICS 导入教程弹窗 -->
+<div class="modal-overlay" id="ics-help-modal" onclick="if(event.target===this) closeICSHelpModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">📅 如何将 .ics 导入日历</div>
+    <div class="modal-desc">
+      <strong>iOS（苹果）：</strong>找到下载的 .ics 文件，点击即可弹出"添加到日历"。<br><br>
+      <strong>Android：</strong>用系统日历 App 或 Google 日历打开下载的 .ics 文件导入。<br><br>
+      <strong>Google 日历（网页）：</strong>打开 calendar.google.com → 设置 → 导入 → 上传 .ics 文件。<br><br>
+      <strong>Outlook：</strong>文件 → 导入，选择 .ics 格式。
+    </div>
+    <button class="btn btn-primary btn-block mt-12" onclick="closeICSHelpModal()">知道了</button>
+  </div>
+</div>
+
+<!-- 课表分享图背景设置弹窗 -->
+<div class="modal-overlay" id="schedule-bg-modal" onclick="if(event.target===this) closeScheduleBgModal()">
+  <div class="modal-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">🎨 课表壁纸设置</div>
+    <div class="modal-desc">上传一张背景图应用于课表网格区域。滑块只调节背景图深浅，不会改变课程块和课表文字透明度。</div>
+    <div class="share-bg-preview-area">
+      <div id="schedule-bg-preview" class="schedule-bg-preview">
+        <div class="schedule-bg-preview-inner"></div>
+        无背景预览
+      </div>
+    </div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="clearSchedulePageBg()">🗑️ 清除背景</button>
+      <button class="btn btn-soft" onclick="selectScheduleBg('upload')">🖼️ 上传图片</button>
+      <input type="file" id="schedule-bg-upload" accept="image/*" style="display:none" onchange="handleScheduleBgUpload(this)">
+    </div>
+    <label class="setting-inline-field mt-12">
+      <span>图片深浅：<strong id="bg-opacity-value">65%</strong></span>
+      <input type="range" id="schedule-page-bg-opacity" min="0.05" max="0.95" step="0.05" value="0.65" oninput="setScheduleBgOpacity(this.value)">
+    </label>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="closeScheduleBgModal()">取消</button>
+      <button class="btn btn-primary" onclick="closeScheduleBgModal(); generateShareImage()">🎨 生成分享图</button>
+    </div>
+  </div>
+</div>
+
+<!-- 课表分享图预览弹窗 -->
+<div class="modal-overlay" id="share-preview-modal" onclick="if(event.target===this) closeSharePreviewModal()">
+  <div class="modal-sheet share-preview-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">分享图预览</div>
+    <div class="share-preview-scroll">
+      <img id="share-preview-img" alt="课表分享图" style="width:100%;border-radius:12px;">
+    </div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" onclick="closeSharePreviewModal()">关闭</button>
+      <button class="btn btn-primary" id="share-save-btn">💾 保存图片</button>
+    </div>
+  </div>
+</div>
+
+<script src="./js/capacitor.js"></script>
+<script src="./js/parser.js"></script>
+<script src="./js/native-sync.js"></script>
+<script src="./js/app.js"></script>
+<script src="./js/features.js"></script>
+</body>
+</html>
