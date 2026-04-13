@@ -73,6 +73,7 @@ jobs:
           APK_SRC="${APK_DIR}/app-release.apk"
           APK_STABLE="${APK_DIR}/NJUST_Companion-release.apk"
           APK_VERSIONED="${APK_DIR}/NJUST_Companion-v${APP_VERSION_NAME}.apk"
+          MANIFEST_PATH="${APK_DIR}/version.json"
           cp "${APK_SRC}" "${APK_STABLE}"
           cp "${APK_SRC}" "${APK_VERSIONED}"
           printf "%s" "${{ inputs.release_notes }}" > release-notes.txt
@@ -85,9 +86,29 @@ jobs:
           - stable APK: NJUST_Companion-release.apk
           EOF
           fi
+          export TAG APP_VERSION_NAME APP_VERSION_CODE MANIFEST_PATH
+          export RELEASE_URL="${{ github.server_url }}/${{ github.repository }}/releases/tag/${TAG}"
+          export DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/releases/latest/download/NJUST_Companion-release.apk"
+          export VERSIONED_DOWNLOAD_URL="${{ github.server_url }}/${{ github.repository }}/releases/download/${TAG}/NJUST_Companion-v${APP_VERSION_NAME}.apk"
+          export PUBLISHED_AT="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+          node <<'EOF'
+          const fs = require('node:fs');
+          const manifest = {
+            tag: process.env.TAG,
+            versionName: process.env.APP_VERSION_NAME,
+            versionCode: Number.parseInt(process.env.APP_VERSION_CODE, 10) || 0,
+            publishedAt: process.env.PUBLISHED_AT,
+            releaseUrl: process.env.RELEASE_URL,
+            downloadUrl: process.env.DOWNLOAD_URL,
+            versionedDownloadUrl: process.env.VERSIONED_DOWNLOAD_URL,
+            notes: fs.readFileSync('release-notes.txt', 'utf8').trim()
+          };
+          fs.writeFileSync(process.env.MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
+          EOF
           echo "TAG=${TAG}" >> "$GITHUB_ENV"
           echo "APK_STABLE=${APK_STABLE}" >> "$GITHUB_ENV"
           echo "APK_VERSIONED=${APK_VERSIONED}" >> "$GITHUB_ENV"
+          echo "MANIFEST_PATH=${MANIFEST_PATH}" >> "$GITHUB_ENV"
 
       - name: Upload workflow artifacts
         uses: actions/upload-artifact@v4
@@ -96,6 +117,7 @@ jobs:
           path: |
             ${{ env.APK_STABLE }}
             ${{ env.APK_VERSIONED }}
+            ${{ env.MANIFEST_PATH }}
 
       - name: Create or update GitHub Release
         env:
@@ -105,7 +127,7 @@ jobs:
           set -euo pipefail
           if gh release view "${TAG}" >/dev/null 2>&1; then
             gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.txt
-            gh release upload "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" --clobber
+            gh release upload "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" "${MANIFEST_PATH}" --clobber
           else
-            gh release create "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" --title "${TAG}" --notes-file release-notes.txt
+            gh release create "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" "${MANIFEST_PATH}" --title "${TAG}" --notes-file release-notes.txt
           fi

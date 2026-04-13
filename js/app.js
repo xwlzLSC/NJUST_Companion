@@ -115,12 +115,9 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
 };
 
 const APP_UPDATE_CONFIG = {
-  latestReleaseApi: 'https://api.github.com/repos/xwlzLSC/NJUST_Companion/releases/latest',
+  versionManifestUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/version.json',
+  stableApkUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/NJUST_Companion-release.apk',
   releasesPage: 'https://github.com/xwlzLSC/NJUST_Companion/releases',
-  preferredAssetNames: [
-    'NJUST_Companion-release.apk',
-    'app-release.apk'
-  ],
   cacheWindowMs: 30 * 60 * 1000
 };
 
@@ -279,18 +276,10 @@ function compareVersionNames(left, right) {
   return 0;
 }
 
-function parseReleaseVersionCode(notes) {
-  const match = String(notes || '').match(/versionCode\s*[:：]\s*(\d+)/i);
-  return match ? Number.parseInt(match[1], 10) || 0 : 0;
-}
-
-function chooseReleaseApkAsset(assets = []) {
-  const safeAssets = Array.isArray(assets) ? assets : [];
-  for (const fileName of APP_UPDATE_CONFIG.preferredAssetNames) {
-    const matched = safeAssets.find(asset => cleanText(asset?.name) === fileName);
-    if (matched) return matched;
-  }
-  return null;
+function buildAppUpdateManifestUrl(force = false) {
+  if (!force) return APP_UPDATE_CONFIG.versionManifestUrl;
+  const separator = APP_UPDATE_CONFIG.versionManifestUrl.includes('?') ? '&' : '?';
+  return `${APP_UPDATE_CONFIG.versionManifestUrl}${separator}t=${Date.now()}`;
 }
 
 function buildAppUpdateStatusText(update = getAppUpdateState()) {
@@ -298,7 +287,7 @@ function buildAppUpdateStatusText(update = getAppUpdateState()) {
     return '当前不是安卓安装包环境，浏览器模式不支持覆盖更新。';
   }
   if (update.checking) {
-    return '正在检查 GitHub Releases 的最新版本...';
+    return '正在检查最新版本清单...';
   }
   if (update.error) {
     return `检查更新失败：${update.error}`;
@@ -368,13 +357,14 @@ function renderAppUpdateCard() {
 }
 
 async function fetchLatestAppRelease() {
-  const response = await fetch(APP_UPDATE_CONFIG.latestReleaseApi, {
-    headers: {
-      Accept: 'application/vnd.github+json'
-    }
+  const response = await fetch(buildAppUpdateManifestUrl(true), {
+    cache: 'no-store'
   });
   if (!response.ok) {
-    throw new Error(`GitHub Releases 返回 ${response.status}`);
+    if (response.status === 404) {
+      throw new Error('版本清单尚未发布，请先重新发一版正式版 APK');
+    }
+    throw new Error(`版本清单返回 ${response.status}`);
   }
   return response.json();
 }
@@ -1557,15 +1547,14 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
     let releaseUrl = previous.releaseUrl || '';
 
     if (shouldFetchLatest) {
-      const release = await fetchLatestAppRelease();
-      const apkAsset = chooseReleaseApkAsset(release.assets || []);
-      latestTag = cleanText(release.tag_name);
-      latestVersionName = normalizeVersionName(latestTag);
-      latestVersionCode = parseReleaseVersionCode(release.body);
-      latestPublishedAt = normalizeIsoTime(release.published_at);
-      latestNotes = String(release.body || '').trim();
-      downloadUrl = cleanText(apkAsset?.browser_download_url);
-      releaseUrl = cleanText(release.html_url) || APP_UPDATE_CONFIG.releasesPage;
+      const manifest = await fetchLatestAppRelease();
+      latestTag = cleanText(manifest.tag);
+      latestVersionName = normalizeVersionName(manifest.versionName || latestTag);
+      latestVersionCode = Number.parseInt(manifest.versionCode, 10) || 0;
+      latestPublishedAt = normalizeIsoTime(manifest.publishedAt);
+      latestNotes = String(manifest.notes || '').trim();
+      downloadUrl = cleanText(manifest.downloadUrl) || APP_UPDATE_CONFIG.stableApkUrl;
+      releaseUrl = cleanText(manifest.releaseUrl) || APP_UPDATE_CONFIG.releasesPage;
     }
 
     const currentVersionName = cleanText(appInfo?.versionName);

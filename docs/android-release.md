@@ -16,7 +16,8 @@
 - [android/app/build.gradle](../android/app/build.gradle) 支持从环境变量或 `keystore.properties` 读取正式签名
 - [scripts/build-android-release.cjs](../scripts/build-android-release.cjs) 可构建正式版 APK
 - [`.github/workflows/android-release.yml`](../.github/workflows/android-release.yml) 可在 GitHub Actions 里自动打包并发布到 GitHub Releases
-- 应用内会检查 GitHub Releases 的最新版本，并在安卓安装包里提示用户更新
+- 工作流会额外生成 `version.json` 版本清单并上传到 GitHub Releases
+- 应用内会读取这个静态版本清单，再提示用户覆盖更新，不再依赖 GitHub API 额度
 
 ## 一次性准备：生成你自己的签名证书
 
@@ -103,6 +104,20 @@ android/app/build/outputs/apk/release/app-release.apk
 6. 生成两个安装包文件名：
    - `NJUST_Companion-release.apk`
    - `NJUST_Companion-v版本号.apk`
+7. 生成一个版本清单文件：
+   - `version.json`
+
+应用内更新读取的是这个固定地址：
+
+```text
+https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/version.json
+```
+
+稳定 APK 下载地址：
+
+```text
+https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/NJUST_Companion-release.apk
+```
 
 ### 需要配置的 GitHub Secrets
 
