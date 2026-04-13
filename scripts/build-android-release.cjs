@@ -18,14 +18,31 @@ function resolveCommand(command) {
   return command;
 }
 
+function pathExists(value) {
+  return Boolean(value) && fs.existsSync(value);
+}
+
 function findSdkRoot() {
   const candidates = [
     process.env.ANDROID_HOME,
     process.env.ANDROID_SDK_ROOT,
+    '/usr/local/lib/android/sdk',
+    '/usr/lib/android-sdk',
+    '/opt/android-sdk',
     process.env.LOCALAPPDATA ? path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk') : '',
     process.env.HOME ? path.join(process.env.HOME, 'Android', 'Sdk') : ''
   ].filter(Boolean);
-  return candidates.find(item => fs.existsSync(item)) || '';
+  return candidates.find(pathExists) || '';
+}
+
+function findJavaHome() {
+  const candidates = [
+    process.env.JAVA_HOME,
+    process.env.JAVA_HOME_21_X64,
+    process.env.JAVA_HOME_17_X64,
+    process.env.JAVA_HOME_11_X64
+  ].filter(Boolean);
+  return candidates.find(pathExists) || '';
 }
 
 function hasReleaseSigningConfig() {
@@ -65,7 +82,8 @@ async function main() {
     throw new Error('未找到 Android SDK，请先设置 ANDROID_HOME / ANDROID_SDK_ROOT');
   }
 
-  if (!process.env.JAVA_HOME) {
+  const javaHome = findJavaHome();
+  if (!javaHome) {
     throw new Error('未找到 JAVA_HOME，请先安装 JDK 21 并设置 JAVA_HOME');
   }
 
@@ -75,11 +93,12 @@ async function main() {
 
   const env = {
     ...process.env,
+    JAVA_HOME: javaHome,
     ANDROID_HOME: sdkRoot,
     ANDROID_SDK_ROOT: sdkRoot,
     PATH: process.platform === 'win32'
-      ? `${path.join(process.env.JAVA_HOME, 'bin')};${path.join(sdkRoot, 'platform-tools')};${process.env.PATH || ''}`
-      : `${path.join(process.env.JAVA_HOME, 'bin')}:${path.join(sdkRoot, 'platform-tools')}:${process.env.PATH || ''}`
+      ? `${path.join(javaHome, 'bin')};${path.join(sdkRoot, 'platform-tools')};${process.env.PATH || ''}`
+      : `${path.join(javaHome, 'bin')}:${path.join(sdkRoot, 'platform-tools')}:${process.env.PATH || ''}`
   };
 
   await fsp.writeFile(
