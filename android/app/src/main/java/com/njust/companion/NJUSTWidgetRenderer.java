@@ -126,9 +126,12 @@ final class NJUSTWidgetRenderer {
 
     private static String footerText(JSONObject data) {
         String updatedAt = data.optString("updatedAt", "");
+        String updatedAtText = data.optString("updatedAtText", "");
         String semester = data.optString("semester", "");
         int week = data.optInt("currentWeek", 0);
-        String update = updatedAt.length() >= 16 ? "更新 " + updatedAt.substring(11, 16) : "等待同步";
+        String update = updatedAtText.length() > 0
+            ? "更新 " + updatedAtText
+            : updatedAt.length() >= 16 ? "更新 " + updatedAt.substring(11, 16) : "等待同步";
         if (week > 0 && semester.length() > 0) return "第 " + week + " 周 · " + semester + " · " + update;
         if (week > 0) return "第 " + week + " 周 · " + update;
         return update;

@@ -245,6 +245,20 @@
       </div>
 
       <div class="card">
+        <div class="setting-label">应用更新</div>
+        <div class="setting-desc" id="app-update-status">正在检查当前版本...</div>
+        <div class="install-tip mt-12" id="app-update-notes" hidden></div>
+        <div class="action-row mt-12">
+          <button class="btn btn-outline btn-sm" type="button" onclick="checkAppUpdate()">检查更新</button>
+          <button class="btn btn-primary btn-sm" type="button" id="app-update-action-btn" onclick="startAppUpdate()">立即更新</button>
+          <button class="btn btn-soft btn-sm" type="button" id="app-update-release-btn" onclick="openLatestReleasePage()">查看发布页</button>
+        </div>
+        <div class="install-tip mt-12">
+          正式版 APK 支持直接覆盖更新，不需要先卸载。只有第一次从旧的 debug 包迁移到正式 release 包时，才可能需要手动卸载一次。
+        </div>
+      </div>
+
+      <div class="card">
         <div class="setting-label">桌面组件</div>
         <div class="setting-desc">可把课程表、待办、考试或总览添加到安卓桌面。添加前会先刷新一次组件数据。</div>
         <div class="widget-action-grid mt-12">

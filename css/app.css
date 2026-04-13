@@ -1729,6 +1729,26 @@ textarea {
   gap: 12px;
 }
 
+.update-notes-title {
+  font-weight: 700;
+  color: var(--color-text);
+}
+
+.update-notes-meta {
+  margin-top: 4px;
+  font-size: 0.76rem;
+  color: var(--color-text-secondary);
+}
+
+.update-notes-body {
+  margin-top: 8px;
+  font-size: 0.78rem;
+  line-height: 1.65;
+  color: var(--color-text-secondary);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
 .classroom-result-card,
 .site-card {
   overflow: hidden;
@@ -1913,6 +1933,12 @@ textarea {
 
 .btn:active {
   transform: scale(0.97);
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
 }
 
 .btn-sm {

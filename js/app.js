@@ -114,11 +114,40 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   scheduledIds: []
 };
 
+const APP_UPDATE_CONFIG = {
+  latestReleaseApi: 'https://api.github.com/repos/xwlzLSC/NJUST_Companion/releases/latest',
+  releasesPage: 'https://github.com/xwlzLSC/NJUST_Companion/releases',
+  preferredAssetNames: [
+    'NJUST_Companion-release.apk',
+    'app-release.apk'
+  ],
+  cacheWindowMs: 30 * 60 * 1000
+};
+
+const DEFAULT_APP_UPDATE_STATE = {
+  supported: false,
+  checking: false,
+  currentVersionName: '',
+  currentVersionCode: 0,
+  latestTag: '',
+  latestVersionName: '',
+  latestVersionCode: 0,
+  latestPublishedAt: '',
+  latestNotes: '',
+  downloadUrl: '',
+  releaseUrl: '',
+  canInstallPackages: null,
+  updateAvailable: false,
+  lastCheckedAt: '',
+  error: ''
+};
+
 let db = null;
 let toastTimer = null;
 let scheduleSwipeStart = null;
 let localNotificationsPlugin = null;
 let widgetPlugin = null;
+let appUpdatePlugin = null;
 
 const state = {
   data: createEmptyData(),
@@ -133,6 +162,7 @@ const state = {
   todos: [],
   editingTodoId: '',
   notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS },
+  appUpdate: { ...DEFAULT_APP_UPDATE_STATE },
   gradeSelections: {},
   gradeSearch: '',
   gradeSemester: 'all',
@@ -213,6 +243,140 @@ function getNotificationSettings() {
     ...DEFAULT_NOTIFICATION_SETTINGS,
     ...(state.notificationSettings || {})
   };
+}
+
+function getAppUpdateState() {
+  return {
+    ...DEFAULT_APP_UPDATE_STATE,
+    ...(state.appUpdate || {})
+  };
+}
+
+function isNativeAppPlatform() {
+  const cap = window.capacitorExports || {};
+  return Boolean(cap.Capacitor?.isNativePlatform?.() || window.Capacitor?.isNativePlatform?.());
+}
+
+function normalizeVersionName(value) {
+  return cleanText(value).replace(/^v/i, '');
+}
+
+function compareVersionNames(left, right) {
+  const parse = value => normalizeVersionName(value)
+    .split(/[^\d]+/)
+    .filter(Boolean)
+    .map(item => Number.parseInt(item, 10))
+    .filter(Number.isFinite);
+
+  const leftParts = parse(left);
+  const rightParts = parse(right);
+  const length = Math.max(leftParts.length, rightParts.length, 1);
+  for (let index = 0; index < length; index += 1) {
+    const leftValue = leftParts[index] || 0;
+    const rightValue = rightParts[index] || 0;
+    if (leftValue !== rightValue) return leftValue - rightValue;
+  }
+  return 0;
+}
+
+function parseReleaseVersionCode(notes) {
+  const match = String(notes || '').match(/versionCode\s*[:：]\s*(\d+)/i);
+  return match ? Number.parseInt(match[1], 10) || 0 : 0;
+}
+
+function chooseReleaseApkAsset(assets = []) {
+  const safeAssets = Array.isArray(assets) ? assets : [];
+  for (const fileName of APP_UPDATE_CONFIG.preferredAssetNames) {
+    const matched = safeAssets.find(asset => cleanText(asset?.name) === fileName);
+    if (matched) return matched;
+  }
+  return null;
+}
+
+function buildAppUpdateStatusText(update = getAppUpdateState()) {
+  if (!update.supported) {
+    return '当前不是安卓安装包环境，浏览器模式不支持覆盖更新。';
+  }
+  if (update.checking) {
+    return '正在检查 GitHub Releases 的最新版本...';
+  }
+  if (update.error) {
+    return `检查更新失败：${update.error}`;
+  }
+  if (!update.currentVersionName) {
+    return '正在读取当前应用版本...';
+  }
+
+  const parts = [`当前版本 ${update.currentVersionName}${update.currentVersionCode ? ` (${update.currentVersionCode})` : ''}`];
+  if (update.latestVersionName) {
+    parts.push(`最新版本 ${update.latestVersionName}${update.latestVersionCode ? ` (${update.latestVersionCode})` : ''}`);
+  }
+  if (update.updateAvailable) {
+    parts.push('发现可用更新');
+  } else if (update.latestVersionName) {
+    parts.push('已是最新版本');
+  }
+  if (update.lastCheckedAt) {
+    parts.push(`最近检查 ${formatRelativeImportTime(update.lastCheckedAt)}`);
+  }
+  return parts.join(' · ');
+}
+
+function renderAppUpdateCard() {
+  const statusEl = document.getElementById('app-update-status');
+  const notesEl = document.getElementById('app-update-notes');
+  const actionBtn = document.getElementById('app-update-action-btn');
+  const releaseBtn = document.getElementById('app-update-release-btn');
+  if (!statusEl || !notesEl || !actionBtn || !releaseBtn) return;
+
+  const update = getAppUpdateState();
+  statusEl.textContent = buildAppUpdateStatusText(update);
+
+  const notesParts = [];
+  if (update.latestVersionName) {
+    notesParts.push(`<div class="update-notes-title">最新版本 ${escapeHtml(update.latestVersionName)}</div>`);
+  }
+  if (update.latestPublishedAt) {
+    notesParts.push(`<div class="update-notes-meta">发布时间：${escapeHtml(formatDateTime(update.latestPublishedAt))}</div>`);
+  }
+  if (update.latestNotes) {
+    const preview = update.latestNotes.trim().slice(0, 320);
+    notesParts.push(`<div class="update-notes-body">${escapeHtml(preview)}${update.latestNotes.length > 320 ? '…' : ''}</div>`);
+  }
+  notesEl.hidden = notesParts.length === 0;
+  notesEl.innerHTML = notesParts.join('');
+
+  releaseBtn.disabled = !update.releaseUrl;
+
+  if (!update.supported) {
+    actionBtn.textContent = '仅安卓支持';
+    actionBtn.disabled = true;
+    return;
+  }
+  if (update.canInstallPackages === false) {
+    actionBtn.textContent = '开启安装权限';
+    actionBtn.disabled = false;
+    return;
+  }
+  if (update.updateAvailable && update.downloadUrl) {
+    actionBtn.textContent = '立即更新';
+    actionBtn.disabled = false;
+    return;
+  }
+  actionBtn.textContent = update.checking ? '检查中' : '已是最新版';
+  actionBtn.disabled = true;
+}
+
+async function fetchLatestAppRelease() {
+  const response = await fetch(APP_UPDATE_CONFIG.latestReleaseApi, {
+    headers: {
+      Accept: 'application/vnd.github+json'
+    }
+  });
+  if (!response.ok) {
+    throw new Error(`GitHub Releases 返回 ${response.status}`);
+  }
+  return response.json();
 }
 
 function updateNotificationRuntimeState(nextState = {}) {
@@ -340,20 +504,45 @@ function getUpcomingTodos(limit = 5) {
     .slice(0, limit);
 }
 
+function getTimeValue(value) {
+  const iso = normalizeIsoTime(value);
+  if (!iso) return 0;
+  const timestamp = new Date(iso).getTime();
+  return Number.isNaN(timestamp) ? 0 : timestamp;
+}
+
+function getNewestIsoTime(...values) {
+  let newestIso = '';
+  let newestValue = 0;
+
+  const collect = value => {
+    if (Array.isArray(value)) {
+      value.forEach(collect);
+      return;
+    }
+    const iso = normalizeIsoTime(value);
+    if (!iso) return;
+    const timestamp = getTimeValue(iso);
+    if (!timestamp) return;
+    if (!newestIso || timestamp > newestValue) {
+      newestIso = iso;
+      newestValue = timestamp;
+    }
+  };
+
+  values.forEach(collect);
+  return newestIso;
+}
+
 function getLatestImportedAt(data = state.data) {
-  const candidates = [
-    state.server.lastSyncAt,
+  return getNewestIsoTime(
     data?.meta?.importedAt,
-    ...Object.values(data?.meta?.sources || {}).map(source => source.importedAt)
-  ]
-    .map(normalizeIsoTime)
-    .filter(Boolean)
-    .sort();
-  return candidates[candidates.length - 1] || '';
+    Object.values(data?.meta?.sources || {}).map(source => source.importedAt)
+  );
 }
 
 function getDisplaySyncAt(data = state.data) {
-  return normalizeIsoTime(state.server.lastSyncAt) || getLatestImportedAt(data);
+  return getNewestIsoTime(state.server.lastSyncAt, getLatestImportedAt(data));
 }
 
 function stampDataImportedAt(syncAt) {
@@ -752,6 +941,18 @@ function formatShortDate(date) {
   return `${date.getMonth() + 1}月${date.getDate()}日`;
 }
 
+function formatDateTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '--';
+  return `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function formatClockTime(value) {
+  const date = value instanceof Date ? value : new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return `${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
 function formatRelativeImportTime(value) {
   if (!value) return '未同步';
   const date = new Date(value);
@@ -1147,13 +1348,12 @@ async function refreshServerStatus({ silent = false, check = false } = {}) {
       ...payload.status
     };
     const incomingSyncAt = normalizeIsoTime(payload.status?.lastSyncAt);
-    if (incomingSyncAt) {
-      mergedStatus.lastSyncAt = incomingSyncAt;
-    } else if (normalizeIsoTime(mergedStatus.lastSyncAt)) {
-      mergedStatus.lastSyncAt = normalizeIsoTime(mergedStatus.lastSyncAt);
-    } else if (normalizeIsoTime(state.server.lastSyncAt)) {
-      mergedStatus.lastSyncAt = normalizeIsoTime(state.server.lastSyncAt);
-    }
+    mergedStatus.lastSyncAt = getNewestIsoTime(
+      incomingSyncAt,
+      mergedStatus.lastSyncAt,
+      state.server.lastSyncAt,
+      previousImportedAt
+    );
     state.server = mergedStatus;
     const normalizedRemoteData = payload.data ? normalizeData(payload.data) : null;
     if (normalizedRemoteData && (hasAnyData(normalizedRemoteData) || mergedStatus.lastSyncAt)) {
@@ -1220,7 +1420,7 @@ async function loginAndSync() {
       body: JSON.stringify({ username, password, captcha })
     });
     state.server.available = true;
-    const syncedAt = normalizeIsoTime(payload.status?.lastSyncAt) || new Date().toISOString();
+    const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
     state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
     applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
     await persistCurrentData();
@@ -1252,7 +1452,7 @@ async function syncNow({ silent = false } = {}) {
       method: 'POST',
       body: JSON.stringify({})
     });
-    const syncedAt = normalizeIsoTime(payload.status?.lastSyncAt) || new Date().toISOString();
+    const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
     state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
     applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
     await persistCurrentData();
@@ -1306,6 +1506,175 @@ function getWidgetPlugin() {
   if (!registerPlugin) return null;
   widgetPlugin = registerPlugin('NJUSTWidget');
   return widgetPlugin;
+}
+
+function getAppUpdatePlugin() {
+  if (appUpdatePlugin) return appUpdatePlugin;
+  const cap = window.capacitorExports || {};
+  const native = Boolean(cap.Capacitor?.isNativePlatform?.() || window.Capacitor?.isNativePlatform?.());
+  if (!native) return null;
+  const registerPlugin = cap.registerPlugin || window.Capacitor?.registerPlugin;
+  if (!registerPlugin) return null;
+  appUpdatePlugin = registerPlugin('NJUSTAppUpdate');
+  return appUpdatePlugin;
+}
+
+async function refreshAppUpdateState({ silent = true, force = false } = {}) {
+  const previous = getAppUpdateState();
+  state.appUpdate = {
+    ...previous,
+    supported: isNativeAppPlatform(),
+    checking: true,
+    error: ''
+  };
+  renderAppUpdateCard();
+
+  try {
+    const plugin = getAppUpdatePlugin();
+    if (!plugin) {
+      state.appUpdate = {
+        ...DEFAULT_APP_UPDATE_STATE,
+        supported: false,
+        checking: false,
+        releaseUrl: APP_UPDATE_CONFIG.releasesPage
+      };
+      renderAppUpdateCard();
+      return state.appUpdate;
+    }
+    const appInfo = plugin?.getAppInfo ? await plugin.getAppInfo() : null;
+    const lastCheckedAt = normalizeIsoTime(previous.lastCheckedAt);
+    const shouldFetchLatest = force
+      || !previous.latestVersionName
+      || !lastCheckedAt
+      || (Date.now() - new Date(lastCheckedAt).getTime()) > APP_UPDATE_CONFIG.cacheWindowMs;
+
+    let latestTag = previous.latestTag || '';
+    let latestVersionName = previous.latestVersionName || '';
+    let latestVersionCode = Number(previous.latestVersionCode || 0);
+    let latestPublishedAt = previous.latestPublishedAt || '';
+    let latestNotes = previous.latestNotes || '';
+    let downloadUrl = previous.downloadUrl || '';
+    let releaseUrl = previous.releaseUrl || '';
+
+    if (shouldFetchLatest) {
+      const release = await fetchLatestAppRelease();
+      const apkAsset = chooseReleaseApkAsset(release.assets || []);
+      latestTag = cleanText(release.tag_name);
+      latestVersionName = normalizeVersionName(latestTag);
+      latestVersionCode = parseReleaseVersionCode(release.body);
+      latestPublishedAt = normalizeIsoTime(release.published_at);
+      latestNotes = String(release.body || '').trim();
+      downloadUrl = cleanText(apkAsset?.browser_download_url);
+      releaseUrl = cleanText(release.html_url) || APP_UPDATE_CONFIG.releasesPage;
+    }
+
+    const currentVersionName = cleanText(appInfo?.versionName);
+    const currentVersionCode = Number(appInfo?.versionCode || 0);
+    const canInstallPackages = appInfo?.canRequestPackageInstalls === undefined
+      ? null
+      : Boolean(appInfo.canRequestPackageInstalls);
+
+    let updateAvailable = false;
+    if (downloadUrl && latestVersionName && currentVersionName) {
+      const versionCompare = compareVersionNames(latestVersionName, currentVersionName);
+      updateAvailable = versionCompare > 0;
+      if (!updateAvailable && versionCompare === 0 && latestVersionCode && currentVersionCode) {
+        updateAvailable = latestVersionCode > currentVersionCode;
+      }
+    }
+
+    state.appUpdate = {
+      supported: Boolean(plugin),
+      checking: false,
+      currentVersionName,
+      currentVersionCode,
+      latestTag,
+      latestVersionName,
+      latestVersionCode,
+      latestPublishedAt,
+      latestNotes,
+      downloadUrl,
+      releaseUrl: releaseUrl || APP_UPDATE_CONFIG.releasesPage,
+      canInstallPackages,
+      updateAvailable,
+      lastCheckedAt: shouldFetchLatest ? new Date().toISOString() : previous.lastCheckedAt,
+      error: ''
+    };
+  } catch (error) {
+    state.appUpdate = {
+      ...getAppUpdateState(),
+      supported: isNativeAppPlatform(),
+      checking: false,
+      error: error.message || '检查更新失败'
+    };
+    if (!silent) {
+      showToast(state.appUpdate.error);
+    }
+  }
+
+  renderAppUpdateCard();
+  return state.appUpdate;
+}
+
+async function checkAppUpdate() {
+  const update = await refreshAppUpdateState({ silent: false, force: true });
+  if (update.error) return;
+  if (update.updateAvailable) {
+    showToast(`发现新版本 ${update.latestVersionName}`);
+    return;
+  }
+  showToast(`当前已是最新版本 ${update.currentVersionName || ''}`.trim());
+}
+
+async function startAppUpdate() {
+  let update = getAppUpdateState();
+  const plugin = getAppUpdatePlugin();
+  if (!plugin) {
+    showToast('仅安卓安装包支持应用内更新');
+    return;
+  }
+
+  if (update.canInstallPackages === false) {
+    try {
+      await plugin.openInstallSettings();
+      showToast('请先允许本应用安装 APK，返回后再点一次更新');
+    } catch (error) {
+      showToast(error.message || '打开安装权限设置失败');
+    }
+    return;
+  }
+
+  if (!update.downloadUrl) {
+    update = await refreshAppUpdateState({ silent: false, force: true });
+    if (!update.downloadUrl) {
+      showToast('没有找到可用的安装包下载地址');
+      return;
+    }
+  }
+
+  try {
+    await plugin.downloadAndInstall({
+      url: update.downloadUrl,
+      fileName: `NJUST_Companion-v${update.latestVersionName || 'release'}.apk`
+    });
+    showToast('开始下载更新，下载完成后系统会弹出安装');
+  } catch (error) {
+    if (error?.code === 'INSTALL_PERMISSION_REQUIRED' || /安装更新包/.test(error?.message || '')) {
+      try {
+        await plugin.openInstallSettings();
+        showToast('请先允许本应用安装更新包');
+      } catch (openError) {
+        showToast(openError.message || '打开安装权限设置失败');
+      }
+      return;
+    }
+    showToast(error.message || '开始更新失败');
+  }
+}
+
+function openLatestReleasePage() {
+  const target = getAppUpdateState().releaseUrl || APP_UPDATE_CONFIG.releasesPage;
+  void openSiteLink(target);
 }
 
 function getNotificationId(seed) {
@@ -1586,6 +1955,7 @@ async function afterDataChanged({ previousGradeSignature = '' } = {}) {
 
 function buildWidgetPayload() {
   const now = new Date();
+  const widgetUpdatedAt = now.toISOString();
   const currentWeek = getCurrentWeek(state.data.meta.semesterStart, now);
   const todayWeekday = getTodayWeekday(now);
   const todayCourses = getCoursesForDay(todayWeekday, currentWeek)
@@ -1616,7 +1986,8 @@ function buildWidgetPayload() {
     }));
 
   return {
-    updatedAt: new Date().toISOString(),
+    updatedAt: widgetUpdatedAt,
+    updatedAtText: formatClockTime(now),
     semester: state.data.meta.semester || '',
     currentWeek,
     counts: {
@@ -3302,8 +3673,10 @@ function renderSettings() {
   if (notifyGrades) notifyGrades.checked = Boolean(settings.gradeReminders);
   if (notifyLeadMinutes) notifyLeadMinutes.value = String(settings.leadMinutes || DEFAULT_NOTIFICATION_SETTINGS.leadMinutes);
   renderNotificationStatus();
+  renderAppUpdateCard();
   if (state.currentPage === 'settings') {
     void refreshNotificationStatus({ silent: true, persist: false });
+    void refreshAppUpdateState({ silent: true });
   }
   renderServerStatus();
 }
@@ -4072,6 +4445,7 @@ async function init() {
   }
   state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || 1);
   await refreshServerStatus({ silent: true });
+  void refreshAppUpdateState({ silent: true, force: true });
   if (state.server.available) {
     refreshCaptcha({ silent: true });
     if (isNativeSyncAvailable()) {
@@ -4097,6 +4471,10 @@ async function init() {
       }, 60000);
     }
   }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden || state.currentPage !== 'settings') return;
+    void refreshAppUpdateState({ silent: true, force: true });
+  });
   window.setInterval(() => {
     if (state.currentPage === 'schedule') {
       renderSchedule(state.currentWeekday || getTodayWeekday());
