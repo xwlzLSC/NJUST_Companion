@@ -8,11 +8,8 @@
 
 如果你没有自己的服务器，当前最省事的方案是把这个项目部署成一个 `Render` 托管的个人后端实例，再用 iPhone Safari “添加到主屏幕”。
 
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/xwlzLSC/NJUST_Companion)
-
-先看这两份文档：
-
-- [Render 托管部署说明](./docs/render-deploy.md)
+- **[最推荐] [iPhone 0 成本部署指南 (免费版)](./docs/iphone-free-guide.md)** —— 适合绝大多数个人用户，完全免费。
+- [Render 托管部署说明 (专业版)](./docs/render-deploy.md) —— 需要 Render 付费计划以支持磁盘持久化。
 - [iPhone 网页方式说明](./docs/iphone-webapp.md)
 
 需要明确一点：
@@ -123,6 +120,12 @@ npm run android:sync
 npm run apk:debug
 ```
 
+打正式签名包：
+
+```bash
+npm run apk:release
+```
+
 APK 输出路径：
 
 ```text
@@ -141,6 +144,8 @@ android/app/build/outputs/apk/debug/app-debug.apk
   - 同步前端资源到安卓工程
 - `npm run apk:debug`
   - 构建安卓调试包
+- `npm run apk:release`
+  - 构建安卓正式签名包
 
 ## 目录结构
 
@@ -177,6 +182,7 @@ android/app/build/outputs/apk/debug/app-debug.apk
 ## 文档
 
 - [Render 托管部署说明](./docs/render-deploy.md)
+- [安卓正式版与覆盖更新](./docs/android-release.md)
 - [服务器部署说明](./docs/deploy-server.md)
 - [iPhone 网页方式说明](./docs/iphone-webapp.md)
 

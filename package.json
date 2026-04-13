@@ -11,7 +11,8 @@
     "build:android:web": "node scripts/prepare-capacitor-web.cjs",
     "android:add": "npm run build:android:web && npx cap add android",
     "android:sync": "npm run build:android:web && npx cap sync android",
-    "apk:debug": "node scripts/build-android-debug.cjs"
+    "apk:debug": "node scripts/build-android-debug.cjs",
+    "apk:release": "node scripts/build-android-release.cjs"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",

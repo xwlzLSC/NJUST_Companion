@@ -1,0 +1,107 @@
+name: Android Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_name:
+        description: 安卓版本名，例如 2.0.1
+        required: true
+        type: string
+      version_code:
+        description: 安卓版本号，必须递增，例如 2
+        required: true
+        type: string
+      release_notes:
+        description: GitHub Release 说明，可留空
+        required: false
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build-release:
+    runs-on: ubuntu-latest
+    env:
+      APP_VERSION_NAME: ${{ inputs.version_name }}
+      APP_VERSION_CODE: ${{ inputs.version_code }}
+      ANDROID_SIGNING_STORE_FILE: ${{ github.workspace }}/android/release.keystore
+      ANDROID_SIGNING_STORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_SIGNING_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_SIGNING_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Setup Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 21
+          cache: gradle
+
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Restore release keystore
+        shell: bash
+        run: |
+          echo "${{ secrets.ANDROID_KEYSTORE_BASE64 }}" | base64 --decode > android/release.keystore
+
+      - name: Build signed release APK
+        run: npm run apk:release
+
+      - name: Prepare release assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          TAG="v${APP_VERSION_NAME}"
+          APK_DIR="android/app/build/outputs/apk/release"
+          APK_SRC="${APK_DIR}/app-release.apk"
+          APK_STABLE="${APK_DIR}/NJUST_Companion-release.apk"
+          APK_VERSIONED="${APK_DIR}/NJUST_Companion-v${APP_VERSION_NAME}.apk"
+          cp "${APK_SRC}" "${APK_STABLE}"
+          cp "${APK_SRC}" "${APK_VERSIONED}"
+          printf "%s" "${{ inputs.release_notes }}" > release-notes.txt
+          if [ ! -s release-notes.txt ]; then
+            cat > release-notes.txt <<EOF
+          Android Release ${APP_VERSION_NAME}
+
+          - versionName: ${APP_VERSION_NAME}
+          - versionCode: ${APP_VERSION_CODE}
+          - stable APK: NJUST_Companion-release.apk
+          EOF
+          fi
+          echo "TAG=${TAG}" >> "$GITHUB_ENV"
+          echo "APK_STABLE=${APK_STABLE}" >> "$GITHUB_ENV"
+          echo "APK_VERSIONED=${APK_VERSIONED}" >> "$GITHUB_ENV"
+
+      - name: Upload workflow artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: android-release-${{ inputs.version_name }}
+          path: |
+            ${{ env.APK_STABLE }}
+            ${{ env.APK_VERSIONED }}
+
+      - name: Create or update GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if gh release view "${TAG}" >/dev/null 2>&1; then
+            gh release edit "${TAG}" --title "${TAG}" --notes-file release-notes.txt
+            gh release upload "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" --clobber
+          else
+            gh release create "${TAG}" "${APK_STABLE}" "${APK_VERSIONED}" --title "${TAG}" --notes-file release-notes.txt
+          fi

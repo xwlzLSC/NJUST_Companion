@@ -1,5 +1,32 @@
 apply plugin: 'com.android.application'
 
+import java.util.Properties
+
+def keystoreProperties = new Properties()
+def keystorePropertiesFile = rootProject.file('keystore.properties')
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(new FileInputStream(keystorePropertiesFile))
+}
+
+def versionCodeValue = Integer.parseInt(
+    (System.getenv('APP_VERSION_CODE') ?: project.findProperty('APP_VERSION_CODE') ?: '1').toString()
+)
+def versionNameValue = (System.getenv('APP_VERSION_NAME') ?: project.findProperty('APP_VERSION_NAME') ?: '1.0.0').toString()
+
+def releaseStoreFileValue = (System.getenv('ANDROID_SIGNING_STORE_FILE') ?: keystoreProperties.getProperty('storeFile', '')).toString()
+def releaseStorePasswordValue = (System.getenv('ANDROID_SIGNING_STORE_PASSWORD') ?: keystoreProperties.getProperty('storePassword', '')).toString()
+def releaseKeyAliasValue = (System.getenv('ANDROID_SIGNING_KEY_ALIAS') ?: keystoreProperties.getProperty('keyAlias', '')).toString()
+def releaseKeyPasswordValue = (System.getenv('ANDROID_SIGNING_KEY_PASSWORD') ?: keystoreProperties.getProperty('keyPassword', '')).toString()
+def releaseStoreFile = releaseStoreFileValue
+    ? (new File(releaseStoreFileValue).isAbsolute()
+        ? file(releaseStoreFileValue)
+        : rootProject.file(releaseStoreFileValue))
+    : null
+def hasReleaseSigning = releaseStoreFile?.exists()
+    && releaseStorePasswordValue
+    && releaseKeyAliasValue
+    && releaseKeyPasswordValue
+
 android {
     namespace = "com.njust.companion"
     compileSdk = rootProject.ext.compileSdkVersion
@@ -7,8 +34,8 @@ android {
         applicationId "com.njust.companion"
         minSdkVersion rootProject.ext.minSdkVersion
         targetSdkVersion rootProject.ext.targetSdkVersion
-        versionCode 1
-        versionName "1.0"
+        versionCode versionCodeValue
+        versionName versionNameValue
         testInstrumentationRunner "androidx.test.runner.AndroidJUnitRunner"
         aaptOptions {
              // Files and dirs to omit from the packaged assets dir, modified to accommodate modern web apps.
@@ -16,9 +43,22 @@ android {
             ignoreAssetsPattern = '!.svn:!.git:!.ds_store:!*.scc:.*:!CVS:!thumbs.db:!picasa.ini:!*~'
         }
     }
+    signingConfigs {
+        if (hasReleaseSigning) {
+            release {
+                storeFile releaseStoreFile
+                storePassword releaseStorePasswordValue
+                keyAlias releaseKeyAliasValue
+                keyPassword releaseKeyPasswordValue
+            }
+        }
+    }
     buildTypes {
         release {
             minifyEnabled false
+            if (hasReleaseSigning) {
+                signingConfig signingConfigs.release
+            }
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }
     }
