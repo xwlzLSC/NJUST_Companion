@@ -18,6 +18,13 @@ function resolveCommand(command) {
   return command;
 }
 
+function getGradleCommand() {
+  if (process.platform === 'win32') {
+    return { command: 'gradlew', args: ['assembleRelease'], shell: true };
+  }
+  return { command: 'bash', args: ['./gradlew', 'assembleRelease'], shell: false };
+}
+
 function pathExists(value) {
   return Boolean(value) && fs.existsSync(value);
 }
@@ -113,10 +120,11 @@ async function main() {
     shell: process.platform === 'win32'
   });
 
-  await run(process.platform === 'win32' ? 'gradlew' : './gradlew', ['assembleRelease'], {
+  const gradle = getGradleCommand();
+  await run(gradle.command, gradle.args, {
     cwd: ANDROID_DIR,
     env,
-    shell: process.platform === 'win32'
+    shell: gradle.shell
   });
 }
 
