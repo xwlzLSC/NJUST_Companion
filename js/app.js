@@ -139,12 +139,17 @@ const DEFAULT_APP_UPDATE_STATE = {
   error: ''
 };
 
+const CLASSROOM_LEAD_STATUS_TTL_MS = 20 * 60 * 1000;
+const CLASSROOM_LEAD_ERROR_TTL_MS = 2 * 60 * 1000;
+
 let db = null;
 let toastTimer = null;
 let scheduleSwipeStart = null;
 let localNotificationsPlugin = null;
 let widgetPlugin = null;
 let appUpdatePlugin = null;
+const classroomLeadStatusCache = new Map();
+const classroomLeadStatusRequests = new Map();
 
 const state = {
   data: createEmptyData(),
@@ -154,6 +159,7 @@ const state = {
   selectedWeek: 1,
   scheduleViewMode: 'week',
   scheduleDetailMap: {},
+  activeScheduleDetailId: '',
   customCourses: [],
   editingCustomCourseId: '',
   todos: [],
@@ -2442,6 +2448,10 @@ function renderHome() {
       ? '可直接登录教务系统并自动同步'
       : '启动本地服务后可直接登录，否则继续使用手动导入';
   const nextCourse = getNextCourseInstance();
+  const nextCourseLeadStatus = nextCourse ? getCachedClassroomLeadStatus(nextCourse) : null;
+  if (nextCourse) {
+    void ensureClassroomLeadStatus(nextCourse);
+  }
   const upcomingExams = state.data.exams
     .map(exam => ({ ...exam, countdown: calcExamCountdown(exam.date) }))
     .filter(exam => exam.countdown !== null && exam.countdown >= 0)
@@ -2457,6 +2467,7 @@ function renderHome() {
     heroHighlight.innerHTML = `
       <strong>下节课：${escapeHtml(nextCourse.course.name)}</strong><br>
       ${escapeHtml(getRelativeDayLabel(nextCourse.date, nextCourse))} · ${escapeHtml(getPeriodText(nextCourse.course.periods))} · ${escapeHtml(nextCourse.course.room || '地点待定')}
+      ${nextCourseLeadStatus?.text ? `<br><span class="hero-room-hint ${escapeHtml(nextCourseLeadStatus.tone || 'neutral')}">${escapeHtml(nextCourseLeadStatus.text)}</span>` : ''}
     `;
   } else if (upcomingExams[0]) {
     heroHighlight.innerHTML = `
@@ -2494,6 +2505,7 @@ function renderHome() {
             ${escapeHtml(getRelativeDayLabel(nextCourse.date, nextCourse))} · ${escapeHtml(range.start)}-${escapeHtml(range.end)}<br>
             ${escapeHtml(nextCourse.course.room || '地点待定')} · ${escapeHtml(nextCourse.course.teacher || '教师未标注')}
           </div>
+          ${nextCourseLeadStatus?.text ? `<div class="next-card-hint ${escapeHtml(nextCourseLeadStatus.tone || 'neutral')}">${escapeHtml(nextCourseLeadStatus.text)}</div>` : ''}
         </div>
       </div>
     `;
@@ -2825,10 +2837,11 @@ function renderScheduleFooterBar() {
 function closeScheduleDetail() {
   const modal = document.getElementById('course-detail-modal');
   if (!modal) return;
+  state.activeScheduleDetailId = '';
   modal.classList.remove('open');
 }
 
-function openScheduleDetail(detailId) {
+function openScheduleDetail(detailId, rerenderOnly = false) {
   const detail = state.scheduleDetailMap[detailId];
   if (!detail) {
     showToast('课程详情不可用');
@@ -2838,11 +2851,13 @@ function openScheduleDetail(detailId) {
   const modal = document.getElementById('course-detail-modal');
   const content = document.getElementById('course-detail-content');
   if (!modal || !content) return;
+  state.activeScheduleDetailId = detailId;
 
   const grade = findRelatedGrade(detail.course.name);
   const courseCredit = detail.course.credit > 0 ? detail.course.credit : (grade?.credit || 0);
   const range = getPeriodRange(detail.periods);
   const detailDate = detail.date ? new Date(`${detail.date}T00:00:00`) : null;
+  const detailLeadStatus = getScheduleDetailLeadStatus(detail);
   const topMeta = detail.viewMode === 'semester'
     ? `总课表 · ${WEEKDAY_NAMES[detail.weekday]}`
     : `第 ${detail.selectedWeek} 周 · ${WEEKDAY_NAMES[detail.weekday]}${detailDate ? ` · ${escapeHtml(formatShortDate(detailDate))}` : ''}`;
@@ -2885,6 +2900,13 @@ function openScheduleDetail(detailId) {
     }
   }
 
+  const detailLeadStatusHtml = detailLeadStatus?.text ? `
+    <div class="course-detail-callout ${escapeHtml(detailLeadStatus.tone || 'neutral')}">
+      <div class="course-detail-callout-title">教室空闲提示</div>
+      <div class="course-detail-callout-text">${escapeHtml(detailLeadStatus.text)}</div>
+    </div>
+  ` : '';
+
   content.innerHTML = `
     <div class="course-detail-hero">
       <div class="course-detail-kicker">${topMeta}</div>
@@ -2908,6 +2930,7 @@ function openScheduleDetail(detailId) {
           </div>
         `).join('')}
       </div>
+      ${detailLeadStatusHtml}
     </div>
 
     <div class="course-detail-section">
@@ -2944,6 +2967,18 @@ function openScheduleDetail(detailId) {
   `;
 
   modal.classList.add('open');
+
+  if (!rerenderOnly) {
+    const detailInstance = buildScheduleDetailLeadInstance(detail);
+    if (detailInstance && (!detailLeadStatus || detailLeadStatus.status === 'loading')) {
+      Promise.resolve(ensureClassroomLeadStatus(detailInstance)).then(() => {
+        const currentModal = document.getElementById('course-detail-modal');
+        if (state.activeScheduleDetailId === detailId && currentModal?.classList.contains('open')) {
+          openScheduleDetail(detailId, true);
+        }
+      }).catch(() => {});
+    }
+  }
 }
 
 function renderGradeFilters() {
@@ -3222,6 +3257,233 @@ function getClassroomBuildingShortLabel(building) {
     .replace(/校区/g, '')
     .replace(/\s+/g, '')
     .slice(0, 6) || value || '楼栋';
+}
+
+function normalizeRoomReference(value) {
+  return cleanText(value)
+    .toUpperCase()
+    .replace(/[－—–]/g, '-')
+    .replace(/^Ⅰ/, 'I')
+    .replace(/^Ⅱ/, 'II')
+    .replace(/^Ⅲ/, 'III')
+    .replace(/^Ⅳ/, 'IV');
+}
+
+function getRoomMatchKey(value) {
+  return normalizeCourseMatchName(cleanText(value));
+}
+
+function getCoursePrimaryPeriodGroup(course) {
+  const periods = Array.isArray(course?.periods) ? course.periods.map(Number).filter(Number.isFinite) : [];
+  const firstPeriod = periods
+    .filter(period => period !== 14 && period >= 1 && period <= 12)
+    .sort((left, right) => getPeriodPosition(left) - getPeriodPosition(right))[0];
+  if (!firstPeriod) return null;
+  return CLASSROOM_PERIOD_GROUPS.find(group => {
+    const start = Number.parseInt(group.startCode, 10);
+    const end = Number.parseInt(group.endCode, 10);
+    return firstPeriod >= start && firstPeriod <= end;
+  }) || null;
+}
+
+function getClassroomGroupIndexByKey(key) {
+  return CLASSROOM_PERIOD_GROUPS.findIndex(item => item.key === String(key));
+}
+
+function getPreviousClassroomPeriodGroup(course) {
+  const currentGroup = getCoursePrimaryPeriodGroup(course);
+  if (!currentGroup) return null;
+  if (!['2', '4'].includes(currentGroup.key)) return null;
+  const currentIndex = getClassroomGroupIndexByKey(currentGroup.key);
+  if (currentIndex <= 0) return null;
+  return {
+    currentGroup,
+    previousGroup: CLASSROOM_PERIOD_GROUPS[currentIndex - 1]
+  };
+}
+
+function inferBuildingValueFromRoom(roomText, buildings = state.classrooms.buildings) {
+  const raw = cleanText(roomText);
+  const normalized = normalizeRoomReference(roomText);
+  if (!normalized || /线上|网课|篮球场|操场|田径场|体育馆|游泳馆|实验平台/.test(raw)) return '';
+
+  const knownMappings = [
+    { value: '6', patterns: [/^IV-/, /^Ⅳ-/, /四工/, /Ⅳ教学楼/, /IV教学楼/] },
+    { value: '2', patterns: [/^II-/, /^Ⅱ-/, /二工/, /Ⅱ教学楼/, /II教学楼/] },
+    { value: '1', patterns: [/^I-/, /^Ⅰ-/, /一工/, /Ⅰ教学楼/, /I教学楼/] },
+    { value: '9', patterns: [/艺文馆/, /^艺文/] },
+    { value: '8', patterns: [/^其他/, /^其它/] }
+  ];
+
+  for (const mapping of knownMappings) {
+    if (mapping.patterns.some(pattern => pattern.test(normalized) || pattern.test(raw))) {
+      return mapping.value;
+    }
+  }
+
+  const availableBuildings = Array.isArray(buildings) ? buildings : [];
+  for (const building of availableBuildings) {
+    const label = normalizeRoomReference(building.label);
+    const shortLabel = normalizeRoomReference(getClassroomBuildingShortLabel(building));
+    if ((label && normalized.startsWith(label)) || (shortLabel && normalized.startsWith(shortLabel))) {
+      return cleanText(building.value);
+    }
+  }
+
+  return '';
+}
+
+function findRoomRow(rows, roomText) {
+  const roomKey = getRoomMatchKey(roomText);
+  if (!roomKey) return null;
+  return (Array.isArray(rows) ? rows : []).find(row =>
+    getRoomMatchKey(row?.id || row?.name || row?.label || row?.room || '') === roomKey
+  ) || null;
+}
+
+function buildClassroomLeadStatusContext(instance) {
+  if (!instance?.course?.room) return null;
+  const periodInfo = getPreviousClassroomPeriodGroup(instance.course);
+  if (!periodInfo?.previousGroup) return null;
+  const building = inferBuildingValueFromRoom(instance.course.room);
+  if (!building) return null;
+  return {
+    campus: state.classrooms.campus || '01',
+    building,
+    week: Number(instance.week) || getWeekForDate(state.data.meta.semesterStart, instance.date) || 1,
+    weekday: Number(instance.weekday) || getTodayWeekday(instance.date),
+    room: cleanText(instance.course.room),
+    roomKey: getRoomMatchKey(instance.course.room),
+    currentGroup: periodInfo.currentGroup,
+    previousGroup: periodInfo.previousGroup,
+    cacheKey: [
+      state.classrooms.campus || '01',
+      building,
+      Number(instance.week) || 0,
+      Number(instance.weekday) || 0,
+      periodInfo.previousGroup.key,
+      getRoomMatchKey(instance.course.room)
+    ].join('|')
+  };
+}
+
+function getCachedClassroomLeadStatus(instance) {
+  const context = buildClassroomLeadStatusContext(instance);
+  if (!context) return null;
+  const cached = classroomLeadStatusCache.get(context.cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  if (classroomLeadStatusRequests.has(context.cacheKey)) {
+    return {
+      status: 'loading',
+      tone: 'neutral',
+      text: `正在检查${context.previousGroup.name}这间教室是否空闲...`
+    };
+  }
+  return null;
+}
+
+async function ensureClassroomLeadStatus(instance) {
+  const context = buildClassroomLeadStatusContext(instance);
+  if (!context || !state.server.available || !state.server.loggedIn) return null;
+
+  const cached = classroomLeadStatusCache.get(context.cacheKey);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  if (classroomLeadStatusRequests.has(context.cacheKey)) {
+    return classroomLeadStatusRequests.get(context.cacheKey);
+  }
+
+  const request = (async () => {
+    try {
+      await ensureClassroomOptions();
+      const resolvedBuilding = inferBuildingValueFromRoom(context.room, state.classrooms.buildings) || context.building;
+      if (!resolvedBuilding) {
+        const unsupported = {
+          status: 'unsupported',
+          tone: 'neutral',
+          text: ''
+        };
+        classroomLeadStatusCache.set(context.cacheKey, { ...unsupported, expiresAt: Date.now() + CLASSROOM_LEAD_ERROR_TTL_MS });
+        return unsupported;
+      }
+
+      const payload = await apiRequest('/api/classrooms/query', {
+        method: 'POST',
+        body: JSON.stringify({
+          semester: state.classrooms.semester || state.data.meta.semester || '',
+          campus: context.campus,
+          building: resolvedBuilding,
+          week: context.week,
+          weekday: context.weekday,
+          startPeriodCode: context.previousGroup.startCode,
+          endPeriodCode: context.previousGroup.endCode,
+          dayLabel: WEEKDAY_NAMES[context.weekday] || '',
+          periodLabel: context.previousGroup.name
+        })
+      });
+
+      const result = payload?.result || payload?.data || payload || {};
+      const row = findRoomRow(result.rows, context.room);
+      let nextState;
+      if (!row) {
+        nextState = {
+          status: 'unknown',
+          tone: 'neutral',
+          text: `${context.previousGroup.name}未查到这间教室，建议手动确认`
+        };
+      } else if ((row.markers || []).length === 0) {
+        nextState = {
+          status: 'free',
+          tone: 'good',
+          text: `${context.previousGroup.name}这间教室空闲，可提前过去自习`
+        };
+      } else {
+        nextState = {
+          status: 'busy',
+          tone: 'warn',
+          text: `${context.previousGroup.name}这间教室有课，建议临近上课再去`
+        };
+      }
+
+      classroomLeadStatusCache.set(context.cacheKey, {
+        ...nextState,
+        expiresAt: Date.now() + CLASSROOM_LEAD_STATUS_TTL_MS
+      });
+      return nextState;
+    } catch {
+      const fallback = {
+        status: 'error',
+        tone: 'neutral',
+        text: ''
+      };
+      classroomLeadStatusCache.set(context.cacheKey, { ...fallback, expiresAt: Date.now() + CLASSROOM_LEAD_ERROR_TTL_MS });
+      return fallback;
+    } finally {
+      classroomLeadStatusRequests.delete(context.cacheKey);
+      if (state.currentPage === 'home') renderHome();
+    }
+  })();
+
+  classroomLeadStatusRequests.set(context.cacheKey, request);
+  return request;
+}
+
+function buildScheduleDetailLeadInstance(detail) {
+  if (!detail?.course) return null;
+  return {
+    course: {
+      ...detail.course,
+      periods: Array.isArray(detail.periods) && detail.periods.length ? detail.periods : detail.course.periods
+    },
+    week: Number(detail.selectedWeek) || Number(detail.week) || 0,
+    weekday: Number(detail.weekday) || 0,
+    date: detail.date || ''
+  };
+}
+
+function getScheduleDetailLeadStatus(detail) {
+  const instance = buildScheduleDetailLeadInstance(detail);
+  if (!instance) return null;
+  return getCachedClassroomLeadStatus(instance);
 }
 
 function getVisibleClassroomBuildings() {
