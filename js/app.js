@@ -3366,10 +3366,15 @@ function inferBuildingValueFromRoom(roomText, buildings = state.classrooms.build
 function findRoomRow(rows, roomText) {
   const roomAliases = getRoomMatchAliases(roomText);
   if (!roomAliases.size) return null;
-  return (Array.isArray(rows) ? rows : []).find(row =>
-    Array.from(getRoomMatchAliases(row?.id || row?.name || row?.label || row?.room || ''))
-      .some(alias => roomAliases.has(alias))
-  ) || null;
+  return (Array.isArray(rows) ? rows : []).find(row => {
+    const rowAliases = new Set([
+      ...(getRoomMatchAliases(row?.name || '')),
+      ...(getRoomMatchAliases(row?.label || '')),
+      ...(getRoomMatchAliases(row?.room || '')),
+      ...(getRoomMatchAliases(row?.id || ''))
+    ]);
+    return Array.from(rowAliases).some(alias => roomAliases.has(alias));
+  }) || null;
 }
 
 function buildClassroomLeadStatusContext(instance) {

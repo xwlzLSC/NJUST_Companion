@@ -701,7 +701,7 @@ function buildMultiPeriodChips() {
 }
 
 function getClassroomRoomKey(room) {
-  return normalizeCourseMatchName(cleanText(room?.id || room?.name || room?.label || room?.room || ''));
+  return normalizeCourseMatchName(cleanText(room?.name || room?.label || room?.room || room?.id || ''));
 }
 
 function getClassroomGroupIndex(key) {
