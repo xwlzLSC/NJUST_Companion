@@ -1132,11 +1132,10 @@ async function generateShareImage() {
 
   showToast('正在生成分享图，请稍候...');
 
+  const prevMode = state.scheduleViewMode;
+  let captureHost = null;
   try {
     const html2canvas = await loadHtml2Canvas();
-
-    // 暂时切换到全周视图
-    const prevMode = state.scheduleViewMode;
     if (prevMode !== 'week') {
       state.scheduleViewMode = 'week';
       renderSchedule();
@@ -1144,20 +1143,70 @@ async function generateShareImage() {
     }
     applyScheduleBoardBackground();
     await new Promise(r => requestAnimationFrame(r));
+    if (document.fonts?.ready) {
+      try {
+        await document.fonts.ready;
+      } catch {
+        // ignore font readiness failure
+      }
+    }
 
-    const canvas = await html2canvas(board, {
+    const captureSource = board.querySelector('.schedule-board-card');
+    if (!captureSource) {
+      throw new Error('找不到课表内容');
+    }
+
+    captureHost = document.createElement('div');
+    captureHost.style.position = 'fixed';
+    captureHost.style.left = '-100000px';
+    captureHost.style.top = '0';
+    captureHost.style.zIndex = '-1';
+    captureHost.style.padding = '0';
+    captureHost.style.margin = '0';
+    captureHost.style.background = 'transparent';
+    captureHost.dataset.shareCaptureHost = '1';
+
+    const captureNode = captureSource.cloneNode(true);
+    const boardWidth = Math.max(Math.ceil(captureSource.getBoundingClientRect().width), 320);
+    captureNode.style.width = `${boardWidth}px`;
+    captureNode.style.maxWidth = 'none';
+    captureNode.style.margin = '0';
+
+    const scrollNode = captureNode.querySelector('.schedule-board-scroll');
+    if (scrollNode) {
+      scrollNode.style.maxHeight = 'none';
+      scrollNode.style.height = 'auto';
+      scrollNode.style.overflow = 'visible';
+      scrollNode.style.overflowY = 'visible';
+      scrollNode.style.overflowX = 'visible';
+    }
+
+    const boardNode = captureNode.querySelector('.schedule-board');
+    if (boardNode) {
+      boardNode.style.height = 'auto';
+      boardNode.style.maxHeight = 'none';
+      boardNode.style.overflow = 'visible';
+    }
+
+    captureHost.appendChild(captureNode);
+    document.body.appendChild(captureHost);
+    await new Promise(r => requestAnimationFrame(r));
+
+    const captureWidth = Math.ceil(captureNode.scrollWidth || captureNode.getBoundingClientRect().width || boardWidth);
+    const captureHeight = Math.ceil(captureNode.scrollHeight || captureNode.getBoundingClientRect().height);
+
+    const canvas = await html2canvas(captureNode, {
       scale: 2,
       useCORS: true,
       allowTaint: true,
-      backgroundColor: null
+      backgroundColor: null,
+      width: captureWidth,
+      height: captureHeight,
+      windowWidth: captureWidth,
+      windowHeight: captureHeight,
+      scrollX: 0,
+      scrollY: 0
     });
-
-    // 恢复视图模式
-    if (prevMode !== 'week') {
-      state.scheduleViewMode = prevMode;
-      renderSchedule();
-      applyScheduleBoardBackground();
-    }
 
     // 生成预览
     const imgDataUrl = canvas.toDataURL('image/png');
@@ -1165,6 +1214,13 @@ async function generateShareImage() {
 
   } catch (error) {
     showToast(error.message || '生成分享图失败');
+  } finally {
+    captureHost?.remove();
+    if (prevMode !== 'week') {
+      state.scheduleViewMode = prevMode;
+      renderSchedule();
+      applyScheduleBoardBackground();
+    }
   }
 }
 
