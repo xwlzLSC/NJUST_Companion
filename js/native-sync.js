@@ -48,6 +48,8 @@
       autoSyncEnabled: true,
       username: '',
       password: '',
+      rememberPassword: false,
+      autoLoginEnabled: false,
       profile: PROFILE.key,
       businessBase: '',
       lastSyncAt: '',
@@ -85,17 +87,27 @@
       const raw = global.localStorage.getItem(STORAGE_STATE_KEY);
       if (!raw) return createInitialState();
       const parsed = JSON.parse(raw);
-      return {
+      const nextState = {
         ...createInitialState(),
         ...(parsed && typeof parsed === 'object' ? parsed : {})
       };
+      if (!nextState.rememberPassword) {
+        nextState.password = '';
+        nextState.autoLoginEnabled = false;
+      }
+      return nextState;
     } catch {
       return createInitialState();
     }
   }
 
   function saveState() {
-    global.localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(nativeState));
+    const storedState = {
+      ...nativeState,
+      password: nativeState.rememberPassword ? nativeState.password : '',
+      autoLoginEnabled: nativeState.rememberPassword ? nativeState.autoLoginEnabled : false
+    };
+    global.localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(storedState));
   }
 
   function loadData() {
@@ -140,6 +152,7 @@
       syncing: nativeState.syncing,
       autoSyncEnabled: nativeState.autoSyncEnabled,
       username: nativeState.username,
+      rememberPassword: nativeState.rememberPassword,
       profile: nativeState.profile,
       profileLabel: PROFILE.label,
       businessBase: nativeState.businessBase,
@@ -406,6 +419,15 @@
     return await triggerAutoLoginBackground();
   }
 
+  function canRecoverWithPassword() {
+    return Boolean(
+      nativeState.rememberPassword
+      && nativeState.autoLoginEnabled
+      && nativeState.username
+      && nativeState.password
+    );
+  }
+
   async function verifySession() {
     if (!nativeState.businessBase) {
       nativeState.loggedIn = false;
@@ -536,7 +558,7 @@
     if (isUnauthenticatedPage(html)) {
       const sessionStillValid = await verifySession();
       if (!sessionStillValid) {
-        if (nativeState.username && nativeState.password) {
+        if (canRecoverWithPassword()) {
           const ok = await triggerAutoLoginBackground();
           if (ok) return fetchSectionPage(section, targetPath);
         }
@@ -562,7 +584,7 @@
     if (isUnauthenticatedPage(html)) {
       const sessionStillValid = await verifySession();
       if (!sessionStillValid) {
-        if (nativeState.username && nativeState.password) {
+        if (canRecoverWithPassword()) {
           const ok = await triggerAutoLoginBackground();
           if (ok) return fetchSectionPost(section, url, form, referer);
         }
@@ -939,7 +961,7 @@
   let autoLoginPromise = null;
   async function triggerAutoLoginBackground() {
     if (autoLoginPromise) return autoLoginPromise;
-    if (!nativeState.username || !nativeState.password) return false;
+    if (!canRecoverWithPassword()) return false;
     autoLoginPromise = (async () => {
       try {
         await smartLogin({ username: nativeState.username, password: nativeState.password, autoRetry: true });
@@ -953,7 +975,7 @@
     return autoLoginPromise;
   }
 
-  async function smartLogin({ username, password, captcha, autoRetry = true }) {
+  async function smartLogin({ username, password, captcha, autoRetry = true, rememberPassword = nativeState.rememberPassword }) {
     if (!username || !password) {
       throw new Error('用户名、密码不能为空');
     }
@@ -1038,6 +1060,8 @@
         nativeState.loggedIn = true;
         nativeState.username = username;
         nativeState.password = password;
+        nativeState.rememberPassword = Boolean(rememberPassword);
+        nativeState.autoLoginEnabled = Boolean(rememberPassword);
         nativeState.profile = PROFILE.key;
         nativeState.lastError = '';
         saveState();
@@ -1081,11 +1105,31 @@
     const { Cookies } = requirePlugins();
     await Cookies.clearAllCookies();
     clearCookieSnapshot();
+    const rememberedUsername = nativeState.username;
+    const rememberedPassword = nativeState.rememberPassword ? nativeState.password : '';
+    const rememberPassword = nativeState.rememberPassword;
     nativeState = createInitialState();
+    nativeState.username = rememberedUsername;
+    nativeState.password = rememberedPassword;
+    nativeState.rememberPassword = rememberPassword;
+    nativeState.autoLoginEnabled = false;
     saveState();
     return {
       ok: true,
       status: buildStatus(loadData())
+    };
+  }
+
+  async function saveLoginPreference({ username = '', password = '', rememberPassword = false } = {}) {
+    nativeState.username = String(username || nativeState.username || '').trim();
+    nativeState.rememberPassword = Boolean(rememberPassword);
+    nativeState.password = nativeState.rememberPassword ? String(password || nativeState.password || '') : '';
+    nativeState.autoLoginEnabled = nativeState.rememberPassword && nativeState.loggedIn;
+    saveState();
+    return {
+      ok: true,
+      status: buildStatus(loadData()),
+      data: loadData()
     };
   }
 
@@ -1150,6 +1194,7 @@
     loginAndSync,
     syncNow,
     logout,
-    saveSemesterStart
+    saveSemesterStart,
+    saveLoginPreference
   };
 })(window);

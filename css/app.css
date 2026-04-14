@@ -1292,6 +1292,39 @@ textarea {
   object-fit: cover;
 }
 
+.remember-login-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-radius: 18px;
+  background: var(--color-surface-muted);
+  border: 1px solid rgba(46, 85, 150, 0.08);
+}
+
+.remember-login-row span {
+  display: grid;
+  gap: 4px;
+}
+
+.remember-login-row strong {
+  font-size: 0.86rem;
+}
+
+.remember-login-row small {
+  color: var(--color-text-secondary);
+  font-size: 0.72rem;
+  line-height: 1.45;
+}
+
+.remember-login-row input[type='checkbox'] {
+  width: 42px;
+  height: 24px;
+  flex-shrink: 0;
+  accent-color: var(--color-primary);
+}
+
 .setting-list {
   display: grid;
   gap: 10px;

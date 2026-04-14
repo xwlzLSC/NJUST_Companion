@@ -176,6 +176,13 @@
             <input class="search-input" id="login-captcha" type="text" maxlength="6" placeholder="验证码（选填）">
             <img id="login-captcha-image" class="captcha-image" alt="验证码" onclick="refreshCaptcha()" />
           </div>
+          <label class="remember-login-row">
+            <span>
+              <strong>记住密码</strong>
+              <small>仅保存在当前手机，掉线后自动尝试重新登录</small>
+            </span>
+            <input type="checkbox" id="login-remember">
+          </label>
         </div>
         <div class="action-row mt-12">
           <button class="btn btn-outline" onclick="refreshCaptcha()">刷新验证码</button>

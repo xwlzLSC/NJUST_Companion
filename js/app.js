@@ -114,6 +114,12 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   scheduledIds: []
 };
 
+const DEFAULT_LOGIN_PREFS = {
+  username: '',
+  password: '',
+  rememberPassword: false
+};
+
 const APP_UPDATE_CONFIG = {
   versionManifestUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/version.json',
   stableApkUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/NJUST_Companion-release.apk',
@@ -164,6 +170,7 @@ const state = {
   editingCustomCourseId: '',
   todos: [],
   editingTodoId: '',
+  loginPrefs: { ...DEFAULT_LOGIN_PREFS },
   notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS },
   appUpdate: { ...DEFAULT_APP_UPDATE_STATE },
   gradeSelections: {},
@@ -192,6 +199,7 @@ const state = {
     syncing: false,
     autoSyncEnabled: false,
     username: '',
+    rememberPassword: false,
     profile: '',
     profileLabel: '',
     lastSyncAt: '',
@@ -246,6 +254,29 @@ function getNotificationSettings() {
     ...DEFAULT_NOTIFICATION_SETTINGS,
     ...(state.notificationSettings || {})
   };
+}
+
+function normalizeLoginPrefs(raw) {
+  const next = {
+    ...DEFAULT_LOGIN_PREFS,
+    ...(raw && typeof raw === 'object' ? raw : {})
+  };
+  next.username = cleanText(next.username);
+  next.password = String(next.password || '');
+  next.rememberPassword = Boolean(next.rememberPassword);
+  if (!next.rememberPassword) {
+    next.password = '';
+  }
+  return next;
+}
+
+function getLoginPrefs() {
+  return normalizeLoginPrefs(state.loginPrefs);
+}
+
+async function persistLoginPrefs() {
+  state.loginPrefs = normalizeLoginPrefs(state.loginPrefs);
+  await dbSet('loginPrefs', state.loginPrefs);
 }
 
 function getAppUpdateState() {
@@ -1259,6 +1290,9 @@ async function keepAliveNativeSession() {
     ...payload.status
   };
   renderServerStatus();
+  if (!payload?.status?.loggedIn && payload?.status?.rememberPassword) {
+    return refreshServerStatus({ silent: true });
+  }
   return payload;
 }
 
@@ -1286,7 +1320,8 @@ function renderServerStatus() {
     const nodeText = state.server.businessBase ? ` · 节点 ${state.server.businessBase}` : '';
     statusText.textContent = `已登录 ${state.server.username || ''}${nodeText} · 最近自动同步 ${formatRelativeImportTime(getDisplaySyncAt())}`;
   } else if (state.server.lastError) {
-    statusText.textContent = `服务在线，但当前未登录。${state.server.lastError}`;
+    const rememberHint = state.server.rememberPassword ? ' 已保存账号密码，会在会话掉线后自动尝试恢复。' : '';
+    statusText.textContent = `服务在线，但当前未登录。${state.server.lastError}${rememberHint}`;
   } else {
     statusText.textContent = `服务在线，当前未登录。入口：${state.server.profileLabel || '教务系统'}`;
   }
@@ -1314,7 +1349,7 @@ function buildSettingsLoginGuideHtml() {
         <div class="guide-inline-step">
           <span>🔑</span>
           <strong>密码</strong>
-          <small>输入教务处密码，默认常为学号</small>
+          <small>输入教务处密码，勾选记住密码后可在掉线时自动重登</small>
         </div>
         <div class="guide-inline-step">
           <span>📅</span>
@@ -1399,10 +1434,48 @@ async function refreshCaptcha({ silent = false } = {}) {
   image.src = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
 }
 
+async function syncNativeLoginPreference({ username = '', password = '', rememberPassword = false } = {}) {
+  if (!isNativeSyncAvailable() || !window.NJUSTNativeSync?.saveLoginPreference) return;
+  try {
+    const payload = await window.NJUSTNativeSync.saveLoginPreference({ username, password, rememberPassword });
+    if (payload?.status) {
+      state.server = {
+        ...state.server,
+        ...payload.status
+      };
+      renderServerStatus();
+    }
+  } catch {
+    // ignore preference sync failures; login flow can still proceed
+  }
+}
+
+async function updateRememberPasswordPreference(rememberPassword) {
+  const username = document.getElementById('login-username')?.value.trim()
+    || state.server.username
+    || getLoginPrefs().username
+    || '';
+  const password = document.getElementById('login-password')?.value
+    || getLoginPrefs().password
+    || '';
+  state.loginPrefs = normalizeLoginPrefs({
+    username,
+    password: rememberPassword ? password : '',
+    rememberPassword
+  });
+  await persistLoginPrefs();
+  await syncNativeLoginPreference({
+    username,
+    password,
+    rememberPassword
+  });
+}
+
 async function loginAndSync() {
   const username = document.getElementById('login-username').value.trim();
   const password = document.getElementById('login-password').value;
   const captcha = document.getElementById('login-captcha').value.trim();
+  const rememberPassword = document.getElementById('login-remember')?.checked || false;
 
   if (!username || !password) {
     showToast('请输入用户名和密码');
@@ -1413,11 +1486,17 @@ async function loginAndSync() {
     const previousGradeSignature = buildGradeSignature();
     const payload = await apiRequest('/api/auth/login', {
       method: 'POST',
-      body: JSON.stringify({ username, password, captcha })
+      body: JSON.stringify({ username, password, captcha, rememberPassword })
     });
     state.server.available = true;
     const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
     state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
+    state.loginPrefs = normalizeLoginPrefs({
+      username,
+      password: rememberPassword ? password : '',
+      rememberPassword
+    });
+    await persistLoginPrefs();
     applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
     await persistCurrentData();
     await afterDataChanged({ previousGradeSignature });
@@ -1474,6 +1553,11 @@ async function logoutServer() {
       body: JSON.stringify({})
     });
     state.server = { ...state.server, ...payload.status };
+    await syncNativeLoginPreference({
+      username: getLoginPrefs().username || state.server.username || '',
+      password: getLoginPrefs().password || '',
+      rememberPassword: getLoginPrefs().rememberPassword
+    });
     renderServerStatus();
     refreshCaptcha();
     showToast('已退出登录');
@@ -3332,6 +3416,12 @@ function getPreviousClassroomPeriodGroup(course) {
   };
 }
 
+function shouldSkipClassroomLeadStatus(course) {
+  const name = cleanText(course?.name);
+  const room = cleanText(course?.room);
+  return /体育/.test(name) || /篮球场|操场|田径场|体育馆|游泳馆|体育场/.test(room);
+}
+
 function inferBuildingValueFromRoom(roomText, buildings = state.classrooms.buildings) {
   const raw = cleanText(roomText);
   const normalized = normalizeRoomReference(roomText);
@@ -3379,6 +3469,7 @@ function findRoomRow(rows, roomText) {
 
 function buildClassroomLeadStatusContext(instance) {
   if (!instance?.course?.room) return null;
+  if (shouldSkipClassroomLeadStatus(instance.course)) return null;
   const periodInfo = getPreviousClassroomPeriodGroup(instance.course);
   if (!periodInfo?.previousGroup) return null;
   const building = inferBuildingValueFromRoom(instance.course.room);
@@ -3951,9 +4042,18 @@ function renderSettings() {
     loginGuide.innerHTML = buildSettingsLoginGuideHtml();
   }
 
+  const loginPrefs = getLoginPrefs();
   const usernameInput = document.getElementById('login-username');
-  if (usernameInput && !usernameInput.value && state.server.username) {
-    usernameInput.value = state.server.username;
+  if (usernameInput && !usernameInput.value) {
+    usernameInput.value = loginPrefs.username || state.server.username || '';
+  }
+  const passwordInput = document.getElementById('login-password');
+  if (passwordInput && !passwordInput.value && loginPrefs.rememberPassword && loginPrefs.password) {
+    passwordInput.value = loginPrefs.password;
+  }
+  const rememberInput = document.getElementById('login-remember');
+  if (rememberInput) {
+    rememberInput.checked = Boolean(loginPrefs.rememberPassword || state.server.rememberPassword);
   }
   const semesterStartInput = document.getElementById('setting-semester-start');
   if (semesterStartInput) {
@@ -4700,6 +4800,13 @@ function bindStaticEvents() {
     });
   }
 
+  const loginRemember = document.getElementById('login-remember');
+  if (loginRemember) {
+    loginRemember.addEventListener('change', event => {
+      updateRememberPasswordPreference(Boolean(event.target?.checked)).catch(() => {});
+    });
+  }
+
   const scheduleBoard = document.getElementById('schedule-board');
   if (scheduleBoard) {
     scheduleBoard.addEventListener('touchstart', handleScheduleTouchStart, { passive: true });
@@ -4732,6 +4839,7 @@ async function init() {
   state.gradeSelections = (await dbGet('gradeSelections')) || {};
   state.customCourses = normalizeStoredCustomCourses(await dbGet('customCourses'));
   state.todos = normalizeStoredTodos(await dbGet('todos'));
+  state.loginPrefs = normalizeLoginPrefs(await dbGet('loginPrefs'));
   state.notificationSettings = {
     ...DEFAULT_NOTIFICATION_SETTINGS,
     ...((await dbGet('notificationSettings')) || {})
@@ -4758,10 +4866,16 @@ async function init() {
       }, 10 * 60 * 1000);
 
       document.addEventListener('visibilitychange', () => {
-        if (document.hidden || !state.server.loggedIn) return;
-        keepAliveNativeSession().catch(() => {});
-        refreshServerStatus({ silent: true, check: true });
-        syncNow({ silent: true });
+        if (document.hidden) return;
+        if (state.server.loggedIn) {
+          keepAliveNativeSession().catch(() => {});
+          refreshServerStatus({ silent: true, check: true });
+          syncNow({ silent: true });
+          return;
+        }
+        if (state.server.rememberPassword) {
+          refreshServerStatus({ silent: true });
+        }
       });
     } else {
       window.setInterval(() => {
