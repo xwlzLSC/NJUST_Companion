@@ -52,6 +52,22 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate version progression
+        shell: bash
+        run: |
+          set -euo pipefail
+          LATEST_URL="https://github.com/${{ github.repository }}/releases/latest/download/version.json"
+          if curl -fsSL "$LATEST_URL" -o latest-version.json; then
+            PREV_CODE="$(node -e "const fs=require('node:fs');const data=JSON.parse(fs.readFileSync('latest-version.json','utf8'));process.stdout.write(String(Number.parseInt(data.versionCode,10)||0));")"
+            NEXT_CODE="${APP_VERSION_CODE}"
+            if [ "${NEXT_CODE}" -le "${PREV_CODE}" ]; then
+              echo "version_code 必须递增。当前 latest versionCode=${PREV_CODE}，你输入的是 ${NEXT_CODE}。"
+              exit 1
+            fi
+          else
+            echo "未找到现有 version.json，跳过 versionCode 递增检查。"
+          fi
+
       - name: Restore release keystore
         shell: bash
         run: |

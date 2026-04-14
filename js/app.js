@@ -3270,7 +3270,37 @@ function normalizeRoomReference(value) {
 }
 
 function getRoomMatchKey(value) {
-  return normalizeCourseMatchName(cleanText(value));
+  return normalizeRoomReference(value)
+    .replace(/一工/g, 'I')
+    .replace(/二工/g, 'II')
+    .replace(/四工/g, 'IV')
+    .replace(/艺文馆/g, 'YIWEN')
+    .replace(/其他|其它/g, 'OTHER')
+    .toLowerCase()
+    .replace(/[（）()\[\]【】《》]/g, '')
+    .replace(/[\s·•,，\-—_]/g, '');
+}
+
+function getRoomMatchAliases(value) {
+  const normalized = normalizeRoomReference(value)
+    .replace(/一工/g, 'I')
+    .replace(/二工/g, 'II')
+    .replace(/四工/g, 'IV');
+  const aliases = new Set();
+  const primary = getRoomMatchKey(normalized);
+  if (primary) aliases.add(primary);
+
+  const noPrefix = normalized.replace(/^(IV|III|II|I)-?/i, '');
+  const noPrefixKey = getRoomMatchKey(noPrefix);
+  if (noPrefixKey) aliases.add(noPrefixKey);
+
+  const tailMatch = normalized.match(/([A-Z]+-?\d+[A-Z0-9]*)$/i);
+  if (tailMatch?.[1]) {
+    const tailKey = getRoomMatchKey(tailMatch[1]);
+    if (tailKey) aliases.add(tailKey);
+  }
+
+  return aliases;
 }
 
 function getCoursePrimaryPeriodGroup(course) {
@@ -3334,10 +3364,11 @@ function inferBuildingValueFromRoom(roomText, buildings = state.classrooms.build
 }
 
 function findRoomRow(rows, roomText) {
-  const roomKey = getRoomMatchKey(roomText);
-  if (!roomKey) return null;
+  const roomAliases = getRoomMatchAliases(roomText);
+  if (!roomAliases.size) return null;
   return (Array.isArray(rows) ? rows : []).find(row =>
-    getRoomMatchKey(row?.id || row?.name || row?.label || row?.room || '') === roomKey
+    Array.from(getRoomMatchAliases(row?.id || row?.name || row?.label || row?.room || ''))
+      .some(alias => roomAliases.has(alias))
   ) || null;
 }
 
@@ -3346,7 +3377,6 @@ function buildClassroomLeadStatusContext(instance) {
   const periodInfo = getPreviousClassroomPeriodGroup(instance.course);
   if (!periodInfo?.previousGroup) return null;
   const building = inferBuildingValueFromRoom(instance.course.room);
-  if (!building) return null;
   return {
     campus: state.classrooms.campus || '01',
     building,
@@ -3395,8 +3425,15 @@ async function ensureClassroomLeadStatus(instance) {
   const request = (async () => {
     try {
       await ensureClassroomOptions();
-      const resolvedBuilding = inferBuildingValueFromRoom(context.room, state.classrooms.buildings) || context.building;
-      if (!resolvedBuilding) {
+      const knownBuilding = inferBuildingValueFromRoom(context.room, state.classrooms.buildings) || context.building;
+      const candidateBuildings = [
+        knownBuilding,
+        ...state.classrooms.buildings
+          .map(item => cleanText(item?.value))
+          .filter(Boolean)
+      ].filter((value, index, array) => value && array.indexOf(value) === index);
+
+      if (!candidateBuildings.length) {
         const unsupported = {
           status: 'unsupported',
           tone: 'neutral',
@@ -3406,23 +3443,28 @@ async function ensureClassroomLeadStatus(instance) {
         return unsupported;
       }
 
-      const payload = await apiRequest('/api/classrooms/query', {
-        method: 'POST',
-        body: JSON.stringify({
-          semester: state.classrooms.semester || state.data.meta.semester || '',
-          campus: context.campus,
-          building: resolvedBuilding,
-          week: context.week,
-          weekday: context.weekday,
-          startPeriodCode: context.previousGroup.startCode,
-          endPeriodCode: context.previousGroup.endCode,
-          dayLabel: WEEKDAY_NAMES[context.weekday] || '',
-          periodLabel: context.previousGroup.name
-        })
-      });
+      let row = null;
+      for (const buildingValue of candidateBuildings) {
+        const payload = await apiRequest('/api/classrooms/query', {
+          method: 'POST',
+          body: JSON.stringify({
+            semester: state.classrooms.semester || state.data.meta.semester || '',
+            campus: context.campus,
+            building: buildingValue,
+            week: context.week,
+            weekday: context.weekday,
+            startPeriodCode: context.previousGroup.startCode,
+            endPeriodCode: context.previousGroup.endCode,
+            dayLabel: WEEKDAY_NAMES[context.weekday] || '',
+            periodLabel: context.previousGroup.name
+          })
+        });
 
-      const result = payload?.result || payload?.data || payload || {};
-      const row = findRoomRow(result.rows, context.room);
+        const result = payload?.result || payload?.data || payload || {};
+        row = findRoomRow(result.rows, context.room);
+        if (row) break;
+      }
+
       let nextState;
       if (!row) {
         nextState = {
