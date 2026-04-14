@@ -291,6 +291,24 @@ function isNativeAppPlatform() {
   return Boolean(cap.Capacitor?.isNativePlatform?.() || window.Capacitor?.isNativePlatform?.());
 }
 
+async function disableNativeServiceWorkerCaches() {
+  if (!isNativeAppPlatform()) return;
+  if (!('serviceWorker' in navigator)) return;
+  try {
+    const registrations = await navigator.serviceWorker.getRegistrations();
+    await Promise.all(registrations.map(registration => registration.unregister().catch(() => false)));
+  } catch {
+    // ignore native service worker cleanup failure
+  }
+  if (!('caches' in window)) return;
+  try {
+    const cacheKeys = await caches.keys();
+    await Promise.all(cacheKeys.map(key => caches.delete(key).catch(() => false)));
+  } catch {
+    // ignore cache cleanup failure
+  }
+}
+
 function normalizeVersionName(value) {
   return cleanText(value).replace(/^v/i, '');
 }
@@ -4830,7 +4848,9 @@ async function init() {
   state.currentWeekday = getTodayWeekday();
   bindStaticEvents();
 
-  if ('serviceWorker' in navigator) {
+  if (isNativeAppPlatform()) {
+    await disableNativeServiceWorkerCaches();
+  } else if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(() => {});
   }
 
