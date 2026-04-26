@@ -123,6 +123,29 @@ function createEmptyData() {
   };
 }
 
+function clearRemoteData() {
+  appState.data = createEmptyData();
+  appState.lastSyncAt = '';
+}
+
+function resetRuntimeSession({ clearCredentials = false, clearData = false } = {}) {
+  stopAutoSync();
+  jar = new CookieJar();
+  client = createHttpClient(jar);
+  pendingCaptchaReady = false;
+  appState.loggedIn = false;
+  appState.businessBase = '';
+  appState.lastError = '';
+  appState.sessionCheckedAt = '';
+  if (clearCredentials) {
+    appState.username = '';
+    appState.password = '';
+  }
+  if (clearData) {
+    clearRemoteData();
+  }
+}
+
 function createHttpClient(cookieJar) {
   return wrapper(axios.create({
     jar: cookieJar,
@@ -529,6 +552,13 @@ async function smartLogin({ username, password, captcha, autoRetry = true }) {
     throw new Error('用户名、密码不能为空');
   }
 
+  const normalizedUsername = String(username).trim();
+  const switchingUser = Boolean(appState.username && appState.username !== normalizedUsername);
+  if (switchingUser) {
+    resetRuntimeSession({ clearCredentials: true, clearData: true });
+    await saveState();
+  }
+
   let attempt = 0;
   const maxAttempts = autoRetry ? 15 : 1;
   let lastErrorMessage = '';
@@ -694,6 +724,68 @@ function optionValuesFromSelected(doc, selector) {
   return options.slice(selectedIndex >= 0 ? selectedIndex : 0);
 }
 
+function parseSemesterValue(value) {
+  const normalized = cleanText(value);
+  const match = normalized.match(/^(\d{4})-(\d{4})-(\d{1,2})$/);
+  if (!match) return null;
+  const startYear = Number.parseInt(match[1], 10);
+  const endYear = Number.parseInt(match[2], 10);
+  const term = Number.parseInt(match[3], 10);
+  if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || !Number.isFinite(term)) return null;
+  return {
+    value: normalized,
+    startYear,
+    endYear,
+    term,
+    rank: startYear * 10 + term
+  };
+}
+
+function buildNearbySemesterValues(doc, selector, limit = 6) {
+  const options = parseSelectOptions(doc, selector);
+  if (!options.length) return [];
+
+  const selectedValue = options.find(option => option.selected)?.value || options[0].value;
+  const selectedMeta = parseSemesterValue(selectedValue);
+  const values = [];
+  const pushUnique = value => {
+    if (value && !values.includes(value)) values.push(value);
+  };
+
+  pushUnique(selectedValue);
+  if (!selectedMeta) {
+    options.forEach(option => pushUnique(option.value));
+    return values.slice(0, limit);
+  }
+
+  options
+    .map((option, index) => ({
+      value: option.value,
+      index,
+      meta: parseSemesterValue(option.value)
+    }))
+    .filter(option => option.value !== selectedValue)
+    .sort((left, right) => {
+      if (left.meta && right.meta) {
+        const diffLeft = Math.abs(left.meta.rank - selectedMeta.rank);
+        const diffRight = Math.abs(right.meta.rank - selectedMeta.rank);
+        if (diffLeft !== diffRight) return diffLeft - diffRight;
+
+        const leftOlder = left.meta.rank < selectedMeta.rank ? 1 : 0;
+        const rightOlder = right.meta.rank < selectedMeta.rank ? 1 : 0;
+        if (leftOlder !== rightOlder) return leftOlder - rightOlder;
+
+        if (left.meta.rank !== right.meta.rank) return right.meta.rank - left.meta.rank;
+      } else if (left.meta || right.meta) {
+        return left.meta ? -1 : 1;
+      }
+      return left.index - right.index;
+    })
+    .forEach(option => pushUnique(option.value));
+
+  return values.slice(0, limit);
+}
+
 function countDataRows(doc, selector = '#dataList') {
   const table = doc.querySelector(selector);
   if (!table) return 0;
@@ -789,8 +881,8 @@ async function fetchCertsData() {
 async function fetchExamsData() {
   const entry = await fetchSectionPage('考试', PROFILE.examsQueryPath, 'exams-query');
   const queryDoc = createDocument(entry.html, entry.url);
-  const semester = selectedOptionValue(queryDoc, '#xnxqid');
-  if (!semester) {
+  const semesters = buildNearbySemesterValues(queryDoc, '#xnxqid', 6);
+  if (!semesters.length) {
     return {
       items: [],
       sourceUrl: entry.url,
@@ -798,16 +890,28 @@ async function fetchExamsData() {
     };
   }
 
-  const form = new URLSearchParams();
-  form.set('xnxqid', semester);
   const listUrl = buildUrl(appState.businessBase, PROFILE.examsListPath);
-  const listHtml = await fetchSectionPost('考试', listUrl, form, `exams-${semester}`, entry.url);
-  const listDoc = createDocument(listHtml, listUrl);
+  const items = [];
+  for (const semester of semesters) {
+    const form = new URLSearchParams();
+    form.set('xnxqid', semester);
+    const listHtml = await fetchSectionPost('考试', listUrl, form, `exams-${semester}`, entry.url);
+    const listDoc = createDocument(listHtml, listUrl);
+    if (!countDataRows(listDoc)) continue;
+    const parsed = parseSection('exams', listHtml, listUrl).map(item => ({
+      ...item,
+      semester
+    }));
+    items.push(...parsed);
+  }
 
   return {
-    items: countDataRows(listDoc) ? parseSection('exams', listHtml, listUrl) : [],
+    items: uniqueBy(
+      items,
+      item => `${item.semester || ''}|${item.name}|${item.date}|${item.time}|${item.room}|${item.seat}`
+    ),
     sourceUrl: entry.url,
-    semester
+    semester: selectedOptionValue(queryDoc, '#xnxqid') || semesters[0]
   };
 }
 
@@ -1002,14 +1106,7 @@ async function syncAll() {
 }
 
 async function logout() {
-  stopAutoSync();
-  jar = new CookieJar();
-  client = createHttpClient(jar);
-  pendingCaptchaReady = false;
-  appState.loggedIn = false;
-  appState.username = '';
-  appState.businessBase = '';
-  appState.lastError = '';
+  resetRuntimeSession({ clearCredentials: true, clearData: true });
   appState.sessionCheckedAt = new Date().toISOString();
   await saveState();
 }
@@ -1112,7 +1209,7 @@ app.post('/api/auth/login', async (req, res) => {
 
 app.post('/api/auth/logout', async (req, res) => {
   await logout();
-  res.json({ ok: true, status: buildStatus() });
+  res.json({ ok: true, status: buildStatus(), data: appState.data });
 });
 
 app.post('/api/sync/now', async (req, res) => {

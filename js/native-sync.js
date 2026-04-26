@@ -144,6 +144,27 @@
     global.localStorage.removeItem(STORAGE_COOKIE_KEY);
   }
 
+  function clearRemoteData() {
+    saveData(createEmptyData());
+    nativeState.lastSyncAt = '';
+  }
+
+  function resetRuntimeSession({ clearCredentials = false, clearData = false } = {}) {
+    nativeState.loggedIn = false;
+    nativeState.businessBase = '';
+    nativeState.lastError = '';
+    nativeState.pendingCaptchaReady = false;
+    nativeState.autoLoginEnabled = clearCredentials ? false : nativeState.autoLoginEnabled;
+    if (clearCredentials) {
+      nativeState.username = '';
+      nativeState.password = '';
+      nativeState.rememberPassword = false;
+    }
+    if (clearData) {
+      clearRemoteData();
+    }
+  }
+
   function buildStatus(data = loadData()) {
     return {
       available: isSupported(),
@@ -522,6 +543,68 @@
     return options.slice(selectedIndex >= 0 ? selectedIndex : 0);
   }
 
+  function parseSemesterValue(value) {
+    const normalized = cleanText(value);
+    const match = normalized.match(/^(\d{4})-(\d{4})-(\d{1,2})$/);
+    if (!match) return null;
+    const startYear = Number.parseInt(match[1], 10);
+    const endYear = Number.parseInt(match[2], 10);
+    const term = Number.parseInt(match[3], 10);
+    if (!Number.isFinite(startYear) || !Number.isFinite(endYear) || !Number.isFinite(term)) return null;
+    return {
+      value: normalized,
+      startYear,
+      endYear,
+      term,
+      rank: startYear * 10 + term
+    };
+  }
+
+  function buildNearbySemesterValues(doc, selector, limit = 6) {
+    const options = parseSelectOptions(doc, selector);
+    if (!options.length) return [];
+
+    const selectedValue = options.find(option => option.selected)?.value || options[0].value;
+    const selectedMeta = parseSemesterValue(selectedValue);
+    const values = [];
+    const pushUnique = value => {
+      if (value && !values.includes(value)) values.push(value);
+    };
+
+    pushUnique(selectedValue);
+    if (!selectedMeta) {
+      options.forEach(option => pushUnique(option.value));
+      return values.slice(0, limit);
+    }
+
+    options
+      .map((option, index) => ({
+        value: option.value,
+        index,
+        meta: parseSemesterValue(option.value)
+      }))
+      .filter(option => option.value !== selectedValue)
+      .sort((left, right) => {
+        if (left.meta && right.meta) {
+          const diffLeft = Math.abs(left.meta.rank - selectedMeta.rank);
+          const diffRight = Math.abs(right.meta.rank - selectedMeta.rank);
+          if (diffLeft !== diffRight) return diffLeft - diffRight;
+
+          const leftOlder = left.meta.rank < selectedMeta.rank ? 1 : 0;
+          const rightOlder = right.meta.rank < selectedMeta.rank ? 1 : 0;
+          if (leftOlder !== rightOlder) return leftOlder - rightOlder;
+
+          if (left.meta.rank !== right.meta.rank) return right.meta.rank - left.meta.rank;
+        } else if (left.meta || right.meta) {
+          return left.meta ? -1 : 1;
+        }
+        return left.index - right.index;
+      })
+      .forEach(option => pushUnique(option.value));
+
+    return values.slice(0, limit);
+  }
+
   function countDataRows(doc, selector = '#dataList') {
     const table = doc.querySelector(selector);
     if (!table) return 0;
@@ -653,21 +736,34 @@
   async function fetchExamsData() {
     const entry = await fetchSectionPage('考试', PROFILE.examsQueryPath);
     const queryDoc = createDocument(entry.html);
-    const semester = selectedOptionValue(queryDoc, '#xnxqid');
-    if (!semester) {
+    const semesters = buildNearbySemesterValues(queryDoc, '#xnxqid', 6);
+    if (!semesters.length) {
       return { items: [], sourceUrl: entry.url, semester: '' };
     }
 
-    const form = new URLSearchParams();
-    form.set('xnxqid', semester);
     const listUrl = buildUrl(nativeState.businessBase, PROFILE.examsListPath);
-    const listHtml = await fetchSectionPost('考试', listUrl, form, entry.url);
-    const listDoc = createDocument(listHtml);
+    const items = [];
+    for (const semester of semesters) {
+      const form = new URLSearchParams();
+      form.set('xnxqid', semester);
+      const listHtml = await fetchSectionPost('考试', listUrl, form, entry.url);
+      const listDoc = createDocument(listHtml);
+      if (!countDataRows(listDoc)) continue;
+      items.push(
+        ...parseSection('exams', listHtml, listUrl).map(item => ({
+          ...item,
+          semester
+        }))
+      );
+    }
 
     return {
-      items: countDataRows(listDoc) ? parseSection('exams', listHtml, listUrl) : [],
+      items: uniqueBy(
+        items,
+        item => `${item.semester || ''}|${item.name}|${item.date}|${item.time}|${item.room}|${item.seat}`
+      ),
       sourceUrl: entry.url,
-      semester
+      semester: selectedOptionValue(queryDoc, '#xnxqid') || semesters[0]
     };
   }
 
@@ -980,6 +1076,15 @@
       throw new Error('用户名、密码不能为空');
     }
 
+    const normalizedUsername = String(username).trim();
+    const switchingUser = Boolean(nativeState.username && nativeState.username !== normalizedUsername);
+    if (switchingUser) {
+      const keepRemember = nativeState.rememberPassword;
+      resetRuntimeSession({ clearCredentials: true, clearData: true });
+      nativeState.rememberPassword = keepRemember;
+      saveState();
+    }
+
     let attempt = 0;
     const maxAttempts = autoRetry ? 15 : 1;
     let lastErrorMessage = '';
@@ -1105,18 +1210,12 @@
     const { Cookies } = requirePlugins();
     await Cookies.clearAllCookies();
     clearCookieSnapshot();
-    const rememberedUsername = nativeState.username;
-    const rememberedPassword = nativeState.rememberPassword ? nativeState.password : '';
-    const rememberPassword = nativeState.rememberPassword;
-    nativeState = createInitialState();
-    nativeState.username = rememberedUsername;
-    nativeState.password = rememberedPassword;
-    nativeState.rememberPassword = rememberPassword;
-    nativeState.autoLoginEnabled = false;
+    resetRuntimeSession({ clearCredentials: true, clearData: true });
     saveState();
     return {
       ok: true,
-      status: buildStatus(loadData())
+      status: buildStatus(loadData()),
+      data: loadData()
     };
   }
 

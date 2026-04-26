@@ -533,7 +533,7 @@ function parseLevelExams(doc) {
 }
 
 function parseExams(doc) {
-  const table = pickTable(doc);
+  const table = doc.querySelector('#dataList') || pickTable(doc);
   if (!table || !table.rows.length) return [];
 
   const headers = Array.from(table.rows[0].cells).map(cell => textOf(cell));
@@ -551,15 +551,45 @@ function parseExams(doc) {
   const roomIdx = getIndex('考场', '地点', '教室');
   const seatIdx = getIndex('座位', '位号');
 
+  const extractDateText = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const direct = raw.match(/(\d{4})[-/.年](\d{1,2})[-/.月](\d{1,2})/);
+    if (direct) {
+      return `${direct[1]}-${String(direct[2]).padStart(2, '0')}-${String(direct[3]).padStart(2, '0')}`;
+    }
+    const normalized = raw.replace(/[年月]/g, '-').replace(/日/g, '').replace(/\//g, '-');
+    const match = normalized.match(/(\d{4})-(\d{1,2})-(\d{1,2})/);
+    return match
+      ? `${match[1]}-${String(match[2]).padStart(2, '0')}-${String(match[3]).padStart(2, '0')}`
+      : '';
+  };
+
+  const stripDatePrefix = value => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    return raw
+      .replace(/\d{4}[年./-]\d{1,2}[月./-]\d{1,2}日?/g, ' ')
+      .replace(/[（(]?\s*(?:星期|周)[一二三四五六日天]\s*[)）]?/g, ' ')
+      .replace(/[，,；;]+/g, ' ')
+      .replace(/\s+/g, ' ')
+      .replace(/^[：:、,\-]+/, '')
+      .trim();
+  };
+
   return Array.from(table.rows)
     .slice(1)
     .map(row => {
       const cells = Array.from(row.cells).map(cell => textOf(cell));
       if (!cells.length) return null;
+      const rawDate = dateIdx >= 0 ? cells[dateIdx] : '';
+      const rawTime = timeIdx >= 0 ? cells[timeIdx] : '';
+      const normalizedDate = extractDateText(rawDate) || extractDateText(rawTime);
+      const normalizedTime = stripDatePrefix(rawTime) || stripDatePrefix(rawDate) || rawTime || rawDate;
       return {
         name: nameIdx >= 0 ? cells[nameIdx] : cells[0],
-        date: (dateIdx >= 0 ? cells[dateIdx] : '').replace(/[年月]/g, '-').replace(/日/g, ''),
-        time: timeIdx >= 0 ? cells[timeIdx] : '',
+        date: normalizedDate,
+        time: normalizedTime,
         room: roomIdx >= 0 ? cells[roomIdx] : '',
         seat: seatIdx >= 0 ? cells[seatIdx] : ''
       };
