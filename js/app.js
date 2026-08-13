@@ -90,14 +90,14 @@ const PERIOD_POSITION_MAP = PERIOD_SEQUENCE.reduce((map, period, index) => {
 const SCHEDULE_SLOT_HEIGHT = 44;
 const SCHEDULE_SLOT_GAP = 3;
 const SCHEDULE_BLOCK_PALETTE = [
-  { start: '#6d8df7', end: '#88b5ff', text: '#ffffff' },
-  { start: '#8b73f0', end: '#baa2ff', text: '#ffffff' },
-  { start: '#ef7a74', end: '#ff9e97', text: '#ffffff' },
-  { start: '#f4b64b', end: '#ffd67f', text: '#ffffff' },
-  { start: '#69b4ff', end: '#8bd1ff', text: '#ffffff' },
-  { start: '#76c56f', end: '#a3df87', text: '#ffffff' },
-  { start: '#4c73d9', end: '#6f8df0', text: '#ffffff' },
-  { start: '#4f92c8', end: '#76c3d2', text: '#ffffff' }
+  { start: '#5468d6', end: '#5468d6', text: '#ffffff' },
+  { start: '#7c5ec6', end: '#7c5ec6', text: '#ffffff' },
+  { start: '#c96a5e', end: '#c96a5e', text: '#ffffff' },
+  { start: '#c08a2d', end: '#c08a2d', text: '#ffffff' },
+  { start: '#3e8fc4', end: '#3e8fc4', text: '#ffffff' },
+  { start: '#4c9462', end: '#4c9462', text: '#ffffff' },
+  { start: '#3f5cb0', end: '#3f5cb0', text: '#ffffff' },
+  { start: '#3d87a6', end: '#3d87a6', text: '#ffffff' }
 ];
 
 const DEFAULT_NOTIFICATION_SETTINGS = {
@@ -120,11 +120,34 @@ const DEFAULT_LOGIN_PREFS = {
   rememberPassword: false
 };
 
+const COLOR_THEMES = ['crimson', 'navy', 'forest', 'ink', 'custom'];
+const DEFAULT_COLOR_THEME = 'crimson';
+const DEFAULT_CUSTOM_THEME_COLOR = '#6f3fa0';
+const CUSTOM_THEME_PROPERTIES = [
+  '--color-primary',
+  '--color-primary-deep',
+  '--color-accent',
+  '--color-accent-soft',
+  '--color-bg',
+  '--color-surface',
+  '--color-surface-strong',
+  '--color-surface-muted',
+  '--color-text',
+  '--color-text-secondary',
+  '--color-text-muted',
+  '--color-border',
+  '--theme-contrast',
+  '--theme-tint'
+];
+
 const APP_UPDATE_CONFIG = {
   versionManifestUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/version.json',
+  announcementUrl: 'https://raw.githubusercontent.com/xwlzLSC/NJUST_Companion/main/announcement.json',
   stableApkUrl: 'https://github.com/xwlzLSC/NJUST_Companion/releases/latest/download/NJUST_Companion-release.apk',
   releasesPage: 'https://github.com/xwlzLSC/NJUST_Companion/releases',
-  cacheWindowMs: 30 * 60 * 1000
+  cacheWindowMs: 30 * 60 * 1000,
+  announcementStorageKey: 'njust-announcement-reminders-v1',
+  updateReminderHours: 24
 };
 
 const DEFAULT_APP_UPDATE_STATE = {
@@ -139,6 +162,15 @@ const DEFAULT_APP_UPDATE_STATE = {
   latestNotes: '',
   downloadUrl: '',
   releaseUrl: '',
+  announcementActive: false,
+  announcementId: '',
+  announcementTitle: '',
+  announcementBody: '',
+  announcementPublishedAt: '',
+  announcementLevel: 'info',
+  announcementActionLabel: '',
+  announcementActionUrl: '',
+  announcementRepeatAfterHours: 0,
   canInstallPackages: null,
   updateAvailable: false,
   lastCheckedAt: '',
@@ -167,10 +199,14 @@ const state = {
   scheduleDetailMap: {},
   activeScheduleDetailId: '',
   customCourses: [],
+  scheduleOverrides: [],
+  editingScheduleOverrideId: '',
   editingCustomCourseId: '',
   todos: [],
   editingTodoId: '',
   loginPrefs: { ...DEFAULT_LOGIN_PREFS },
+  colorTheme: DEFAULT_COLOR_THEME,
+  customThemeColor: DEFAULT_CUSTOM_THEME_COLOR,
   notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS },
   appUpdate: { ...DEFAULT_APP_UPDATE_STATE },
   gradeSelections: {},
@@ -210,6 +246,235 @@ const state = {
   }
 };
 
+window.addEventListener('njust-native-status', event => {
+  const status = event.detail;
+  if (!status || typeof status !== 'object') return;
+  state.server = { ...state.server, ...status, available: true };
+  renderServerStatus();
+  if (state.currentPage === 'settings') renderSettings();
+});
+
+function normalizeColorTheme(value) {
+  return COLOR_THEMES.includes(String(value)) ? String(value) : DEFAULT_COLOR_THEME;
+}
+
+function normalizeCustomThemeColor(value) {
+  const color = String(value || '').trim();
+  return /^#[0-9a-f]{6}$/i.test(color) ? color.toLowerCase() : DEFAULT_CUSTOM_THEME_COLOR;
+}
+
+function hexToRgb(color) {
+  const normalized = normalizeCustomThemeColor(color).slice(1);
+  return {
+    r: Number.parseInt(normalized.slice(0, 2), 16),
+    g: Number.parseInt(normalized.slice(2, 4), 16),
+    b: Number.parseInt(normalized.slice(4, 6), 16)
+  };
+}
+
+function rgbToHex({ r, g, b }) {
+  return `#${[r, g, b]
+    .map(channel => Math.max(0, Math.min(255, Math.round(channel))).toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
+function rgbToHsl({ r, g, b }) {
+  const red = r / 255;
+  const green = g / 255;
+  const blue = b / 255;
+  const max = Math.max(red, green, blue);
+  const min = Math.min(red, green, blue);
+  const delta = max - min;
+  let hue = 0;
+  if (delta) {
+    if (max === red) hue = 60 * (((green - blue) / delta) % 6);
+    else if (max === green) hue = 60 * (((blue - red) / delta) + 2);
+    else hue = 60 * (((red - green) / delta) + 4);
+  }
+  if (hue < 0) hue += 360;
+  const lightness = (max + min) / 2;
+  const saturation = delta ? delta / (1 - Math.abs((2 * lightness) - 1)) : 0;
+  return { h: Math.round(hue), s: Math.round(saturation * 100), l: Math.round(lightness * 100) };
+}
+
+function hslToHex(hue, saturation, lightness) {
+  const h = ((Number(hue) % 360) + 360) % 360;
+  const s = Math.max(0, Math.min(100, Number(saturation))) / 100;
+  const l = Math.max(0, Math.min(100, Number(lightness))) / 100;
+  const chroma = (1 - Math.abs((2 * l) - 1)) * s;
+  const x = chroma * (1 - Math.abs(((h / 60) % 2) - 1));
+  const m = l - (chroma / 2);
+  let channels = [0, 0, 0];
+  if (h < 60) channels = [chroma, x, 0];
+  else if (h < 120) channels = [x, chroma, 0];
+  else if (h < 180) channels = [0, chroma, x];
+  else if (h < 240) channels = [0, x, chroma];
+  else if (h < 300) channels = [x, 0, chroma];
+  else channels = [chroma, 0, x];
+  return rgbToHex({ r: (channels[0] + m) * 255, g: (channels[1] + m) * 255, b: (channels[2] + m) * 255 });
+}
+
+function mixThemeColor(from, to, amount) {
+  const start = hexToRgb(from);
+  const end = hexToRgb(to);
+  const ratio = Math.max(0, Math.min(1, Number(amount) || 0));
+  return rgbToHex({
+    r: start.r + (end.r - start.r) * ratio,
+    g: start.g + (end.g - start.g) * ratio,
+    b: start.b + (end.b - start.b) * ratio
+  });
+}
+
+function getThemeColorLuminance(color) {
+  const { r, g, b } = hexToRgb(color);
+  const channels = [r, g, b].map(channel => {
+    const value = channel / 255;
+    return value <= 0.03928 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  });
+  return (0.2126 * channels[0]) + (0.7152 * channels[1]) + (0.0722 * channels[2]);
+}
+
+function getCustomThemeTokens(value) {
+  const color = normalizeCustomThemeColor(value);
+  const luminance = getThemeColorLuminance(color);
+  return {
+    '--color-primary': color,
+    '--color-primary-deep': mixThemeColor(color, '#111111', luminance > 0.08 ? 0.26 : 0.08),
+    '--color-accent': mixThemeColor(color, '#fffdf8', 0.28),
+    '--color-accent-soft': mixThemeColor(color, '#fffdf8', 0.84),
+    '--color-bg': mixThemeColor('#eeecef', color, 0.05),
+    '--color-surface': '#fffdf8',
+    '--color-surface-strong': '#fffdf8',
+    '--color-surface-muted': mixThemeColor('#f3f0f5', color, 0.07),
+    '--color-text': '#171717',
+    '--color-text-secondary': '#66625c',
+    '--color-text-muted': '#89847c',
+    '--color-border': mixThemeColor('#d7d0dc', color, 0.14),
+    '--theme-contrast': luminance > 0.48 ? '#171717' : '#fffdf8',
+    '--theme-tint': mixThemeColor(color, '#fffdf8', 0.78)
+  };
+}
+
+function clearCustomThemeTokens() {
+  CUSTOM_THEME_PROPERTIES.forEach(property => document.documentElement.style.removeProperty(property));
+}
+
+function updateCustomThemeControls(value) {
+  const color = normalizeCustomThemeColor(value);
+  const colorValue = document.getElementById('custom-theme-value');
+  const preview = document.getElementById('custom-theme-preview');
+  const hexInput = document.getElementById('custom-theme-hex');
+  const hueInput = document.getElementById('custom-theme-hue');
+  const saturationInput = document.getElementById('custom-theme-saturation');
+  const lightnessInput = document.getElementById('custom-theme-lightness');
+  const hsl = rgbToHsl(hexToRgb(color));
+  if (colorValue) colorValue.textContent = color.toUpperCase();
+  if (preview) preview.style.backgroundColor = color;
+  if (hexInput && document.activeElement !== hexInput) hexInput.value = color.toUpperCase();
+  if (hueInput && document.activeElement !== hueInput) hueInput.value = String(hsl.h);
+  if (saturationInput && document.activeElement !== saturationInput) saturationInput.value = String(hsl.s);
+  if (lightnessInput && document.activeElement !== lightnessInput) lightnessInput.value = String(hsl.l);
+}
+
+function applyCustomThemeColor(value) {
+  const color = normalizeCustomThemeColor(value);
+  state.customThemeColor = color;
+  const tokens = getCustomThemeTokens(color);
+  Object.entries(tokens).forEach(([property, tokenValue]) => {
+    document.documentElement.style.setProperty(property, tokenValue);
+  });
+  try {
+    window.localStorage.setItem('njust-custom-theme-color', color);
+  } catch {}
+  updateCustomThemeControls(color);
+  return color;
+}
+
+function applyColorTheme(value) {
+  const theme = normalizeColorTheme(value);
+  state.colorTheme = theme;
+  document.documentElement.dataset.theme = theme;
+  if (theme === 'custom') {
+    applyCustomThemeColor(state.customThemeColor);
+  } else {
+    clearCustomThemeTokens();
+    updateCustomThemeControls(state.customThemeColor);
+  }
+  try {
+    window.localStorage.setItem('njust-ui-theme', theme);
+  } catch {}
+  document.querySelector('meta[name="theme-color"]')?.setAttribute(
+    'content',
+    ({ crimson: '#512888', navy: '#173d64', forest: '#28594b', ink: '#121212', custom: state.customThemeColor })[theme]
+  );
+  document.querySelectorAll('.theme-option').forEach(option => {
+    const active = option.dataset.theme === theme;
+    option.classList.toggle('active', active);
+    option.setAttribute('aria-checked', String(active));
+  });
+  return theme;
+}
+
+async function setColorTheme(value) {
+  const theme = applyColorTheme(value);
+  if (db) await dbSet('colorTheme', theme);
+  if (theme !== 'custom') {
+    const editor = document.getElementById('custom-theme-editor');
+    const customOption = document.querySelector('.theme-custom-option');
+    if (editor) editor.hidden = true;
+    customOption?.setAttribute('aria-expanded', 'false');
+  }
+  showToast(`已切换为${({ crimson: '南理紫', navy: '深海蓝', forest: '松柏绿', ink: '墨黑', custom: '自定义配色' })[theme]}`);
+}
+
+function previewCustomThemeColor(value) {
+  state.customThemeColor = normalizeCustomThemeColor(value);
+  applyColorTheme('custom');
+}
+
+function toggleCustomThemeEditor(forceOpen) {
+  const editor = document.getElementById('custom-theme-editor');
+  if (!editor) return;
+  const shouldOpen = typeof forceOpen === 'boolean' ? forceOpen : editor.hidden;
+  editor.hidden = !shouldOpen;
+  document.querySelector('.theme-custom-option')?.setAttribute('aria-expanded', String(shouldOpen));
+  if (shouldOpen) {
+    void setColorTheme('custom');
+    editor.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+}
+
+function previewCustomThemeFromSliders() {
+  const hue = document.getElementById('custom-theme-hue')?.value || 0;
+  const saturation = document.getElementById('custom-theme-saturation')?.value || 50;
+  const lightness = document.getElementById('custom-theme-lightness')?.value || 45;
+  previewCustomThemeColor(hslToHex(hue, saturation, lightness));
+}
+
+async function saveCustomThemeFromSliders() {
+  const hue = document.getElementById('custom-theme-hue')?.value || 0;
+  const saturation = document.getElementById('custom-theme-saturation')?.value || 50;
+  const lightness = document.getElementById('custom-theme-lightness')?.value || 45;
+  await setCustomThemeColor(hslToHex(hue, saturation, lightness), { quiet: true });
+}
+
+async function setCustomThemeColor(value, { quiet = false } = {}) {
+  const rawColor = String(value || '').trim();
+  if (!/^#[0-9a-f]{6}$/i.test(rawColor)) {
+    updateCustomThemeControls(state.customThemeColor);
+    showToast('请输入 6 位 HEX 颜色，例如 #6F3FA0');
+    return;
+  }
+  previewCustomThemeColor(rawColor);
+  if (db) {
+    await Promise.all([
+      dbSet('colorTheme', 'custom'),
+      dbSet('customThemeColor', state.customThemeColor)
+    ]);
+  }
+  if (!quiet) showToast(`自定义主题已设为 ${state.customThemeColor.toUpperCase()}`);
+}
+
 function createEmptyData() {
   return {
     schedule: [],
@@ -239,6 +504,74 @@ function getAllScheduleCourses() {
     ...(Array.isArray(state.data.schedule) ? state.data.schedule : []),
     ...(Array.isArray(state.customCourses) ? state.customCourses : [])
   ];
+}
+
+// The imported timetable is a repeating rule. Teaching weeks often deviate
+// from it, so one-off changes are persisted separately from sync data.
+function getCourseIdentity(course) {
+  const source = course?._baseCourse || course || {};
+  if (source.isCustom && source.id) return `custom:${source.id}`;
+  return [
+    source.id || '', source.code || '', source.sequence || '', source.name || '',
+    source.weekday || '', normalizePeriods(source.periods || []).join(','),
+    source.startWeek || '', source.endWeek || '', source.oddEven || '',
+    source.teacher || '', source.room || ''
+  ].map(cleanText).join('|');
+}
+
+function normalizeScheduleOverride(item) {
+  if (!item || typeof item !== 'object') return null;
+  const sourceCourseId = cleanText(item.sourceCourseId);
+  const week = toPositiveInt(item.week);
+  const action = item.action === 'move' ? 'move' : 'cancel';
+  const weekday = toPositiveInt(item.weekday);
+  const periods = normalizePeriods(item.periods);
+  if (!sourceCourseId || !week) return null;
+  if (action === 'move' && (!weekday || weekday > 7 || !periods.length)) return null;
+  return {
+    id: cleanText(item.id) || createLocalId('override'), sourceCourseId, week, action,
+    weekday: action === 'move' ? weekday : 0,
+    periods: action === 'move' ? periods : [],
+    room: cleanText(item.room), teacher: cleanText(item.teacher), note: cleanText(item.note),
+    updatedAt: normalizeIsoTime(item.updatedAt) || new Date().toISOString()
+  };
+}
+
+function normalizeScheduleOverrides(value) {
+  if (!Array.isArray(value)) return [];
+  const result = new Map();
+  value.map(normalizeScheduleOverride).filter(Boolean).forEach(item => {
+    result.set(`${item.sourceCourseId}|${item.week}`, item);
+  });
+  return [...result.values()].sort((left, right) => left.week - right.week || left.id.localeCompare(right.id));
+}
+
+function getCourseOverride(course, week) {
+  if (!week) return null;
+  return state.scheduleOverrides.find(item => item.sourceCourseId === getCourseIdentity(course) && item.week === week) || null;
+}
+
+function getOverrideCourseName(override) {
+  return getAllScheduleCourses().find(course => getCourseIdentity(course) === override.sourceCourseId)?.name || '未命名课程';
+}
+
+function getEffectiveCourseForWeek(course, week, weekday) {
+  if (!isCourseActiveInWeek(course, week)) return null;
+  const override = getCourseOverride(course, week);
+  if (override?.action === 'cancel') return null;
+  if (override?.action === 'move') {
+    if (override.weekday !== weekday) return null;
+    return {
+      ...course,
+      _baseCourse: course._baseCourse || course,
+      weekday: override.weekday,
+      periods: override.periods,
+      room: override.room || course.room,
+      teacher: override.teacher || course.teacher,
+      override
+    };
+  }
+  return course.weekday === weekday ? course : null;
 }
 
 function getScheduleCourseCount() {
@@ -276,7 +609,12 @@ function getLoginPrefs() {
 
 async function persistLoginPrefs() {
   state.loginPrefs = normalizeLoginPrefs(state.loginPrefs);
-  await dbSet('loginPrefs', state.loginPrefs);
+  // Both transports own their credential store: Android uses Keystore and the
+  // Rust host uses the OS credential manager. IndexedDB only keeps the account
+  // name and preference flag, never the teaching-system password.
+  const stored = { ...state.loginPrefs, password: '' };
+  state.loginPrefs = stored;
+  await dbSet('loginPrefs', stored);
 }
 
 function getAppUpdateState() {
@@ -284,6 +622,157 @@ function getAppUpdateState() {
     ...DEFAULT_APP_UPDATE_STATE,
     ...(state.appUpdate || {})
   };
+}
+
+function getAnnouncementReminderState() {
+  try {
+    const parsed = JSON.parse(window.localStorage.getItem(APP_UPDATE_CONFIG.announcementStorageKey) || '{}');
+    return parsed && typeof parsed === 'object' ? parsed : {};
+  } catch {
+    return {};
+  }
+}
+
+function saveAnnouncementReminderState(nextState) {
+  try {
+    window.localStorage.setItem(
+      APP_UPDATE_CONFIG.announcementStorageKey,
+      JSON.stringify(nextState && typeof nextState === 'object' ? nextState : {})
+    );
+  } catch {
+    // 公告提醒状态写入失败不会影响应用其余功能。
+  }
+}
+
+function getActiveAnnouncement(update = getAppUpdateState()) {
+  if (!update.announcementActive) return null;
+  const id = cleanText(update.announcementId);
+  const title = cleanText(update.announcementTitle);
+  const body = String(update.announcementBody || '').trim();
+  if (!id || (!title && !body)) return null;
+  return {
+    id,
+    title: title || '应用公告',
+    body,
+    publishedAt: normalizeIsoTime(update.announcementPublishedAt),
+    level: ['info', 'important', 'maintenance'].includes(update.announcementLevel)
+      ? update.announcementLevel
+      : 'info',
+    actionLabel: cleanText(update.announcementActionLabel),
+    actionUrl: cleanText(update.announcementActionUrl),
+    repeatAfterHours: Math.max(0, Number(update.announcementRepeatAfterHours || 0))
+  };
+}
+
+function normalizeAnnouncementManifest(raw, fallbackPublishedAt = '') {
+  const announcement = raw && typeof raw === 'object' ? raw : {};
+  return {
+    announcementActive: announcement.active !== false && Boolean(cleanText(announcement.id)),
+    announcementId: cleanText(announcement.id),
+    announcementTitle: cleanText(announcement.title),
+    announcementBody: String(announcement.body || '').trim(),
+    announcementPublishedAt: normalizeIsoTime(announcement.publishedAt || fallbackPublishedAt),
+    announcementLevel: cleanText(announcement.level) || 'info',
+    announcementActionLabel: cleanText(announcement.actionLabel),
+    announcementActionUrl: cleanText(announcement.actionUrl),
+    announcementRepeatAfterHours: Math.max(0, Number(announcement.repeatAfterHours || 0))
+  };
+}
+
+function getAnnouncementPrompt(update = getAppUpdateState()) {
+  if (update.updateAvailable) {
+    return {
+      id: `update:${update.latestVersionCode || update.latestVersionName}`,
+      title: `发现新版本 ${update.latestVersionName || ''}`.trim(),
+      body: String(update.latestNotes || '有新版本可以安装，建议更新后继续使用。').trim(),
+      publishedAt: update.latestPublishedAt,
+      level: 'important',
+      actionLabel: '立即更新',
+      actionUrl: '',
+      repeatAfterHours: APP_UPDATE_CONFIG.updateReminderHours,
+      isUpdate: true
+    };
+  }
+  const announcement = getActiveAnnouncement(update);
+  return announcement ? { ...announcement, isUpdate: false } : null;
+}
+
+function shouldShowAnnouncementPrompt(prompt, { force = false } = {}) {
+  if (!prompt?.id) return false;
+  if (force) return true;
+  const reminder = getAnnouncementReminderState()[prompt.id];
+  if (!reminder) return true;
+  if (reminder.dismissed && !prompt.repeatAfterHours) return false;
+  const remindedAt = new Date(reminder.remindedAt || '').getTime();
+  if (!Number.isFinite(remindedAt)) return true;
+  const repeatHours = prompt.repeatAfterHours || APP_UPDATE_CONFIG.updateReminderHours;
+  return (Date.now() - remindedAt) >= repeatHours * 60 * 60 * 1000;
+}
+
+function markAnnouncementPrompt(prompt, dismissed = false) {
+  if (!prompt?.id) return;
+  const reminders = getAnnouncementReminderState();
+  reminders[prompt.id] = {
+    remindedAt: new Date().toISOString(),
+    dismissed: Boolean(dismissed)
+  };
+  saveAnnouncementReminderState(reminders);
+}
+
+function renderAnnouncementModal(prompt = getAnnouncementPrompt()) {
+  const modal = document.getElementById('announcement-modal');
+  if (!modal || !prompt) return;
+  const eyebrow = document.getElementById('announcement-eyebrow');
+  const title = document.getElementById('announcement-title');
+  const meta = document.getElementById('announcement-meta');
+  const body = document.getElementById('announcement-body');
+  const primary = document.getElementById('announcement-primary-btn');
+  if (!eyebrow || !title || !meta || !body || !primary) return;
+
+  modal.dataset.promptId = prompt.id;
+  modal.dataset.promptKind = prompt.isUpdate ? 'update' : 'announcement';
+  modal.dataset.actionUrl = prompt.actionUrl || '';
+  modal.dataset.level = prompt.level || 'info';
+  modal.querySelector('.announcement-sheet')?.setAttribute('data-level', prompt.level || 'info');
+  eyebrow.textContent = prompt.isUpdate ? '版本更新' : '应用公告';
+  title.textContent = prompt.title;
+  meta.textContent = prompt.publishedAt ? `发布于 ${formatDateTime(prompt.publishedAt)}` : '';
+  meta.hidden = !meta.textContent;
+  body.innerHTML = escapeHtml(prompt.body || '').replace(/\r?\n/g, '<br>');
+  primary.textContent = prompt.actionLabel || (prompt.isUpdate ? '立即更新' : '知道了');
+  modal.classList.add('open');
+}
+
+function maybeShowAnnouncement({ force = false } = {}) {
+  const prompt = getAnnouncementPrompt();
+  if (!prompt || !shouldShowAnnouncementPrompt(prompt, { force })) return false;
+  renderAnnouncementModal(prompt);
+  return true;
+}
+
+function closeAnnouncementModal({ remindLater = false } = {}) {
+  const modal = document.getElementById('announcement-modal');
+  if (!modal) return;
+  const prompt = getAnnouncementPrompt();
+  if (prompt && modal.dataset.promptId === prompt.id) {
+    markAnnouncementPrompt(prompt, prompt.isUpdate ? false : !remindLater);
+  }
+  modal.classList.remove('open');
+}
+
+async function handleAnnouncementPrimaryAction() {
+  const modal = document.getElementById('announcement-modal');
+  if (!modal) return;
+  const prompt = getAnnouncementPrompt();
+  if (prompt) markAnnouncementPrompt(prompt, !prompt.isUpdate);
+  modal.classList.remove('open');
+  if (modal.dataset.promptKind === 'update') {
+    await startAppUpdate();
+    return;
+  }
+  if (modal.dataset.actionUrl) {
+    await openSiteLink(modal.dataset.actionUrl);
+  }
 }
 
 function isNativeAppPlatform() {
@@ -422,6 +911,22 @@ async function fetchLatestAppRelease() {
     throw new Error(`版本清单返回 ${response.status}`);
   }
   return response.json();
+}
+
+async function fetchLatestAnnouncement() {
+  const candidates = [APP_UPDATE_CONFIG.announcementUrl, './announcement.json'];
+  let lastError = null;
+  for (const url of candidates) {
+    try {
+      const separator = url.includes('?') ? '&' : '?';
+      const response = await fetch(`${url}${separator}t=${Date.now()}`, { cache: 'no-store' });
+      if (!response.ok) throw new Error(`公告配置返回 ${response.status}`);
+      return await response.json();
+    } catch (error) {
+      lastError = error;
+    }
+  }
+  throw lastError || new Error('公告配置不可用');
 }
 
 function updateNotificationRuntimeState(nextState = {}) {
@@ -712,8 +1217,19 @@ function normalizePeriods(value) {
     .sort((left, right) => getPeriodPosition(left) - getPeriodPosition(right) || left - right);
 }
 
+function isPlaceholderScheduleName(value) {
+  return String(value ?? '')
+    .replace(/&nbsp;|&#0*160;|&#x0*a0;/gi, '')
+    .replace(/\u00a0/g, '')
+    .trim() === '';
+}
+
 function normalizeScheduleItem(item) {
   if (!item || typeof item !== 'object') return null;
+  // Older Rust/Node sync payloads may already contain a timetable cell whose
+  // only content was `&nbsp;`. Drop it while reading both IndexedDB and API
+  // data so a server upgrade immediately repairs existing local caches.
+  if (isPlaceholderScheduleName(item.name)) return null;
   const weekday = toPositiveInt(item.weekday);
   const periods = normalizePeriods(item.periods);
   if (!weekday || weekday > 7 || periods.length === 0) return null;
@@ -788,6 +1304,47 @@ function normalizeGradeItem(item) {
   };
 }
 
+function looksLikeCourseCode(value) {
+  const text = cleanText(value);
+  return Boolean(text && /^(?=.*\d)[A-Z0-9-]{6,}$/i.test(text));
+}
+
+function repairGradeCourseNames(data) {
+  if (!Array.isArray(data?.grades)) return data;
+
+  const scheduleByCode = new Map();
+  (Array.isArray(data.schedule) ? data.schedule : []).forEach(course => {
+    const code = cleanText(course?.code).toUpperCase();
+    const name = cleanText(course?.name);
+    if (code && name && !looksLikeCourseCode(name)) scheduleByCode.set(code, name);
+  });
+
+  const legacyNameByFingerprint = new Map();
+  try {
+    const saved = JSON.parse(window.localStorage.getItem('njust-grade-name-map') || '{}');
+    Object.entries(saved).forEach(([fingerprint, name]) => {
+      const cleanName = cleanText(name);
+      if (fingerprint && cleanName && !looksLikeCourseCode(cleanName)) legacyNameByFingerprint.set(fingerprint, cleanName);
+    });
+  } catch {}
+
+  const currentNameMap = {};
+
+  data.grades.forEach(grade => {
+    const code = cleanText(grade?.code || grade?.name).toUpperCase();
+    const fingerprint = [grade.semester, code, grade.credit, grade.hours, grade.score ?? grade.scoreText].join('|');
+    if (code && looksLikeCourseCode(grade.name)) {
+      const repairedName = scheduleByCode.get(code) || legacyNameByFingerprint.get(fingerprint);
+      if (repairedName) grade.name = repairedName;
+    }
+    if (!looksLikeCourseCode(grade.name)) currentNameMap[fingerprint] = grade.name;
+  });
+  if (Object.keys(currentNameMap).length) {
+    try { window.localStorage.setItem('njust-grade-name-map', JSON.stringify(currentNameMap)); } catch {}
+  }
+  return data;
+}
+
 function normalizeExamItem(item) {
   if (!item || typeof item !== 'object') return null;
   return {
@@ -842,6 +1399,7 @@ function normalizeData(raw) {
   data.certs = Array.isArray(input.certs) ? input.certs.map(normalizeCertItem).filter(Boolean) : [];
   data.exams = Array.isArray(input.exams) ? input.exams.map(normalizeExamItem).filter(Boolean) : [];
   data.meta = normalizeMeta(input.meta, input);
+  repairGradeCourseNames(data);
   ensureSourceMetadata(data);
   if (!data.meta.semester) {
     data.meta.semester = deriveSemesterLabel(data);
@@ -938,13 +1496,14 @@ function hasAnyData(data = state.data) {
     return Boolean(source) || (Array.isArray(data[section]) && data[section].length > 0);
   });
   if (data !== state.data) return remoteHasData;
-  return remoteHasData || state.customCourses.length > 0 || state.todos.length > 0;
+  return remoteHasData || state.customCourses.length > 0 || state.scheduleOverrides.length > 0 || state.todos.length > 0;
 }
 
 function getMaxWeek() {
   const courses = getAllScheduleCourses();
-  if (!courses.length) return 20;
-  return courses.reduce((max, course) => Math.max(max, course.endWeek || 0), 1);
+  const courseMax = courses.reduce((max, course) => Math.max(max, course.endWeek || 0), 1);
+  const overrideMax = state.scheduleOverrides.reduce((max, item) => Math.max(max, item.week || 0), 1);
+  return Math.max(courseMax, overrideMax, 1);
 }
 
 function getTodayWeekday(date = new Date()) {
@@ -1165,7 +1724,11 @@ function isCourseActiveInWeek(course, week) {
 
 function getCoursesForDay(weekday, week) {
   return getAllScheduleCourses()
-    .filter(course => course.weekday === weekday && isCourseActiveInWeek(course, week))
+    .map(course => {
+      if (week === null) return course.weekday === weekday ? course : null;
+      return getEffectiveCourseForWeek(course, week, weekday);
+    })
+    .filter(Boolean)
     .sort((left, right) => getPeriodPosition(left.periods[0]) - getPeriodPosition(right.periods[0]));
 }
 
@@ -1327,21 +1890,40 @@ function applyRemoteData(data, status = {}) {
 
 function renderServerStatus() {
   const statusText = document.getElementById('server-status-text');
+  const statusDetail = document.getElementById('server-status-detail');
   if (!statusText) return;
+  statusText.className = 'login-status-badge';
 
   if (!state.server.available) {
-    statusText.textContent = '同步服务未连接。浏览器模式需要先在项目目录执行 npm install && npm start；安卓安装包则会自动切换到手机原生同步。';
+    statusText.classList.add('error');
+    statusText.textContent = '服务不可用';
+    if (statusDetail) statusDetail.textContent = '同步服务暂未连接，请检查网络后重试。';
     return;
   }
 
   if (state.server.loggedIn) {
-    const nodeText = state.server.businessBase ? ` · 节点 ${state.server.businessBase}` : '';
-    statusText.textContent = `已登录 ${state.server.username || ''}${nodeText} · 最近自动同步 ${formatRelativeImportTime(getDisplaySyncAt())}`;
+    statusText.classList.add('online');
+    statusText.textContent = '已登录';
+    if (statusDetail) {
+      const savedHint = state.server.credentialsSaved || state.server.rememberPassword ? ' · 密码已安全保存' : '';
+      statusDetail.textContent = `${state.server.username || '教务账号'}${savedHint} · 最近同步 ${formatRelativeImportTime(getDisplaySyncAt())}`;
+    }
+  } else if (state.server.recovering) {
+    statusText.classList.add('recovering');
+    statusText.textContent = '自动恢复中';
+    if (statusDetail) statusDetail.textContent = '正在恢复登录，成功后会立即同步数据。';
+  } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+    statusText.classList.add(state.server.lastError ? 'error' : 'recovering');
+    statusText.textContent = state.server.lastError ? '恢复失败' : '等待恢复';
+    if (statusDetail) statusDetail.textContent = state.server.lastError || '密码已安全保存，网络恢复后会自动重登。';
   } else if (state.server.lastError) {
-    const rememberHint = state.server.rememberPassword ? ' 已保存账号密码，会在会话掉线后自动尝试恢复。' : '';
-    statusText.textContent = `服务在线，但当前未登录。${state.server.lastError}${rememberHint}`;
+    statusText.classList.add('error');
+    statusText.textContent = '登录失败';
+    if (statusDetail) statusDetail.textContent = state.server.lastError;
   } else {
-    statusText.textContent = `服务在线，当前未登录。入口：${state.server.profileLabel || '教务系统'}`;
+    statusText.classList.add('offline');
+    statusText.textContent = '未登录';
+    if (statusDetail) statusDetail.textContent = '登录后可自动同步；开启记住密码后，掉线会自动恢复。';
   }
 }
 
@@ -1360,17 +1942,17 @@ function buildSettingsLoginGuideHtml() {
       </div>
       <div class="guide-inline-grid mt-12">
         <div class="guide-inline-step">
-          <span>🪪</span>
+          <span>01</span>
           <strong>账号</strong>
           <small>输入学号 / 教务系统账号</small>
         </div>
         <div class="guide-inline-step">
-          <span>🔑</span>
+          <span>02</span>
           <strong>密码</strong>
           <small>输入教务处密码，勾选记住密码后可在掉线时自动重登</small>
         </div>
         <div class="guide-inline-step">
-          <span>📅</span>
+          <span>03</span>
           <strong>学期开始日</strong>
           <small>登录后去设置页填写</small>
         </div>
@@ -1404,6 +1986,14 @@ async function refreshServerStatus({ silent = false, check = false } = {}) {
       previousImportedAt
     );
     state.server = mergedStatus;
+    if (isNativeSyncAvailable()) {
+      state.loginPrefs = normalizeLoginPrefs({
+        username: mergedStatus.username || getLoginPrefs().username,
+        password: '',
+        rememberPassword: Boolean(mergedStatus.rememberPassword || mergedStatus.credentialsSaved)
+      });
+      await persistLoginPrefs();
+    }
     const normalizedRemoteData = payload.data ? normalizeData(payload.data) : null;
     if (normalizedRemoteData && (hasAnyData(normalizedRemoteData) || mergedStatus.lastSyncAt)) {
       applyRemoteData(normalizedRemoteData, mergedStatus);
@@ -1427,45 +2017,73 @@ async function refreshServerStatus({ silent = false, check = false } = {}) {
 
 async function refreshCaptcha({ silent = false } = {}) {
   const image = document.getElementById('login-captcha-image');
+  const row = document.getElementById('login-captcha-row');
   if (!image) return;
   const username = document.getElementById('login-username')?.value.trim() || state.server.username || '';
   if (!username) {
     image.removeAttribute('src');
     image.alt = '请先输入学号';
+    if (row) row.dataset.captchaStatus = '请先输入学号后加载验证码';
     if (!silent) showToast('请先输入学号，再刷新验证码');
     return;
   }
   image.alt = '验证码';
+  if (row) row.dataset.captchaStatus = '正在获取验证码…';
 
   if (isNativeSyncAvailable()) {
     try {
       const payload = await window.NJUSTNativeSync.fetchCaptcha(username);
       image.src = payload.imageDataUrl;
+      if (row) row.dataset.captchaStatus = '请输入图片中的验证码；点击图片可刷新';
     } catch (error) {
       image.removeAttribute('src');
       image.alt = '验证码获取失败';
+      if (row) row.dataset.captchaStatus = `验证码获取失败：${error.message || '请检查校园网'}`;
       if (!silent) showToast(error.message || '获取验证码失败');
     }
     return;
   }
 
-  image.src = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
+  const url = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
+  // 教务服务器偶发不可达时自动重试几次，避免一次网络抖动直接报「获取失败」
+  let loadAttempts = 0;
+  const maxLoadAttempts = 3;
+  image.onload = () => {
+    if (row) row.dataset.captchaStatus = '请输入图片中的验证码；点击图片可刷新';
+  };
+  image.onerror = async () => {
+    loadAttempts += 1;
+    if (loadAttempts < maxLoadAttempts) {
+      if (row) row.dataset.captchaStatus = `验证码获取中，正在重试 (${loadAttempts + 1}/${maxLoadAttempts})…`;
+      await new Promise(resolve => setTimeout(resolve, 800));
+      image.src = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
+      return;
+    }
+    image.removeAttribute('src');
+    image.alt = '验证码获取失败';
+    let message = '请检查校园网或网络连接';
+    try {
+      const response = await fetch(url, { cache: 'no-store' });
+      const payload = await response.json().catch(() => null);
+      message = payload?.error || message;
+    } catch {}
+    if (row) row.dataset.captchaStatus = `验证码获取失败：${message}`;
+    if (!silent) showToast(`验证码获取失败：${message}`);
+  };
+  image.src = url;
 }
 
 async function syncNativeLoginPreference({ username = '', password = '', rememberPassword = false } = {}) {
   if (!isNativeSyncAvailable() || !window.NJUSTNativeSync?.saveLoginPreference) return;
-  try {
-    const payload = await window.NJUSTNativeSync.saveLoginPreference({ username, password, rememberPassword });
-    if (payload?.status) {
-      state.server = {
-        ...state.server,
-        ...payload.status
-      };
-      renderServerStatus();
-    }
-  } catch {
-    // ignore preference sync failures; login flow can still proceed
+  const payload = await window.NJUSTNativeSync.saveLoginPreference({ username, password, rememberPassword });
+  if (payload?.status) {
+    state.server = {
+      ...state.server,
+      ...payload.status
+    };
+    renderServerStatus();
   }
+  return payload;
 }
 
 async function updateRememberPasswordPreference(rememberPassword) {
@@ -1476,58 +2094,162 @@ async function updateRememberPasswordPreference(rememberPassword) {
   const password = document.getElementById('login-password')?.value
     || getLoginPrefs().password
     || '';
+  if (rememberPassword && !username) {
+    const checkbox = document.getElementById('login-remember');
+    if (checkbox) checkbox.checked = false;
+    showToast('请先输入学号');
+    return;
+  }
+  if (rememberPassword && !password && !state.server.credentialsSaved) {
+    const checkbox = document.getElementById('login-remember');
+    if (checkbox) checkbox.checked = false;
+    showToast('请先输入密码，再开启记住密码');
+    return;
+  }
   state.loginPrefs = normalizeLoginPrefs({
     username,
     password: rememberPassword ? password : '',
     rememberPassword
   });
-  await persistLoginPrefs();
-  await syncNativeLoginPreference({
-    username,
-    password,
-    rememberPassword
+  try {
+    await syncNativeLoginPreference({ username, password, rememberPassword });
+    await persistLoginPrefs();
+    showToast(rememberPassword ? '密码已安全保存，掉线后会自动恢复' : '已关闭记住密码');
+  } catch (error) {
+    state.loginPrefs = normalizeLoginPrefs({ username, password: '', rememberPassword: false });
+    const checkbox = document.getElementById('login-remember');
+    if (checkbox) checkbox.checked = false;
+    await persistLoginPrefs();
+    showToast(error.message || '记住密码失败');
+    throw error;
+  }
+}
+
+let browserOcrWorker = null;
+
+async function getBrowserOcrWorker() {
+  if (!browserOcrWorker) {
+    if (!window.Tesseract) throw new Error('浏览器 OCR 引擎未能加载，请检查网络');
+    browserOcrWorker = await window.Tesseract.createWorker('eng');
+    await browserOcrWorker.setParameters({
+      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
+    });
+  }
+  return browserOcrWorker;
+}
+
+function blobToDataURL(blob) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result);
+    reader.onerror = () => reject(reader.error);
+    reader.readAsDataURL(blob);
   });
+}
+
+async function solveCaptchaWithBrowserOCR(username) {
+  if (!window.Tesseract) return '';
+  const image = document.getElementById('login-captcha-image');
+  try {
+    const worker = await getBrowserOcrWorker();
+    for (let attempt = 0; attempt < 5; attempt += 1) {
+      const url = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
+      const response = await fetch(url, { cache: 'no-store' });
+      if (!response.ok) continue;
+      const dataUrl = await blobToDataURL(await response.blob());
+      if (image) image.src = dataUrl;
+      const ret = await worker.recognize(dataUrl);
+      const text = String(ret.data.text || '').replace(/[^A-Za-z0-9]/g, '');
+      if (text.length === 4) return text;
+    }
+    return '';
+  } catch (error) {
+    console.warn('浏览器 OCR 识别失败', error);
+    return '';
+  }
 }
 
 async function loginAndSync() {
   const username = document.getElementById('login-username').value.trim();
-  const password = document.getElementById('login-password').value;
-  const captcha = document.getElementById('login-captcha').value.trim();
+  const passwordInput = document.getElementById('login-password');
+  const password = passwordInput.value;
   const rememberPassword = document.getElementById('login-remember')?.checked || false;
+  const captchaRow = document.getElementById('login-captcha-row');
+  const isNative = isNativeSyncAvailable();
 
-  if (!username || !password) {
-    showToast('请输入用户名和密码');
+  const canUseSavedPassword = Boolean(isNativeSyncAvailable() && rememberPassword && (state.server.credentialsSaved || state.server.rememberPassword));
+  if (!username || (!password && !canUseSavedPassword)) {
+    showToast('请输入用户名和密码，或使用已安全保存的密码');
     return;
   }
 
-  try {
-    const previousGradeSignature = buildGradeSignature();
-    const payload = await apiRequest('/api/auth/login', {
-      method: 'POST',
-      body: JSON.stringify({ username, password, captcha, rememberPassword })
-    });
-    state.server.available = true;
-    const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
-    state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
-    state.loginPrefs = normalizeLoginPrefs({
-      username,
-      password: rememberPassword ? password : '',
-      rememberPassword
-    });
-    await persistLoginPrefs();
-    applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
-    await persistCurrentData();
-    await afterDataChanged({ previousGradeSignature });
-    renderCurrentPage();
-    if (state.currentPage !== 'home') renderHome();
-    renderServerStatus();
-    document.getElementById('login-captcha').value = '';
-    refreshCaptcha();
-    showToast(payload.warning ? `登录成功，但同步失败：${payload.warning}` : '登录成功，数据已同步');
-  } catch (error) {
-    refreshCaptcha();
-    showToast(error.message || '登录失败');
-    await refreshServerStatus({ silent: true });
+  let captcha = document.getElementById('login-captcha').value.trim();
+  // 网页版：验证码留空用浏览器 OCR 自动识别，识别失败自动换图重试；
+  // 原生容器（安卓）由 NJUSTNativeSync.loginAndSync 内部 OCR 处理，保持提交空验证码。
+  const maxAttempts = isNative ? 1 : 6;
+
+  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
+    if (!isNative && !captcha) {
+      if (captchaRow) {
+        captchaRow.dataset.captchaStatus = attempt === 0
+          ? '正在自动识别验证码，无需手动输入…'
+          : `正在重新识别验证码 (尝试 ${attempt + 1}/${maxAttempts})…`;
+      }
+      showToast(attempt === 0 ? '未输入验证码，正在自动识别…' : '验证码错误，正在重新识别…');
+      captcha = await solveCaptchaWithBrowserOCR(username);
+      if (!captcha) {
+        if (captchaRow) captchaRow.dataset.captchaStatus = '';
+        refreshCaptcha();
+        showToast('自动识别验证码失败，请手动输入图片中的验证码');
+        return;
+      }
+      document.getElementById('login-captcha').value = captcha;
+    }
+
+    try {
+      const previousGradeSignature = buildGradeSignature();
+      const payload = await apiRequest('/api/auth/login', {
+        method: 'POST',
+        body: JSON.stringify({ username, password, captcha, rememberPassword })
+      });
+      state.server.available = true;
+      const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
+      state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
+      state.loginPrefs = normalizeLoginPrefs({
+        username,
+        password: rememberPassword ? password : '',
+        rememberPassword
+      });
+      await persistLoginPrefs();
+      if (rememberPassword && isNative) {
+        await syncNativeLoginPreference({ username, password, rememberPassword: true });
+      }
+      applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
+      await persistCurrentData();
+      await afterDataChanged({ previousGradeSignature });
+      renderCurrentPage();
+      if (state.currentPage !== 'home') renderHome();
+      renderServerStatus();
+      if (passwordInput && state.server.credentialsSaved) {
+        passwordInput.value = '';
+        passwordInput.placeholder = '密码已安全保存，无需重复输入';
+      }
+      document.getElementById('login-captcha').value = '';
+      refreshCaptcha();
+      showToast(payload.warning ? `登录成功，但同步失败：${payload.warning}` : '登录成功，数据已同步');
+      return;
+    } catch (error) {
+      const message = error.message || '登录失败';
+      // 网页 OCR 模式：验证码类错误自动换一张重新识别；其它错误直接提示
+      if (!isNative && message.includes('验证码') && attempt < maxAttempts - 1) {
+        captcha = '';
+        continue;
+      }
+      refreshCaptcha();
+      showToast(message);
+      await refreshServerStatus({ silent: true });
+      return;
+    }
   }
 }
 
@@ -1575,11 +2297,9 @@ async function logoutServer() {
     await persistCurrentData();
     renderCurrentPage();
     if (state.currentPage !== 'home') renderHome();
-    await syncNativeLoginPreference({
-      username: getLoginPrefs().username || state.server.username || '',
-      password: getLoginPrefs().password || '',
-      rememberPassword: getLoginPrefs().rememberPassword
-    });
+    state.loginPrefs = { ...DEFAULT_LOGIN_PREFS };
+    await persistLoginPrefs();
+    await syncNativeLoginPreference({ username: '', password: '', rememberPassword: false });
     renderServerStatus();
     refreshCaptcha();
     showToast('已退出登录');
@@ -1634,13 +2354,21 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
   try {
     const plugin = getAppUpdatePlugin();
     if (!plugin) {
+      let announcementState = {};
+      try {
+        announcementState = normalizeAnnouncementManifest(await fetchLatestAnnouncement());
+      } catch {
+        // 浏览器离线时不显示公告，不影响本地数据查看。
+      }
       state.appUpdate = {
         ...DEFAULT_APP_UPDATE_STATE,
         supported: false,
         checking: false,
-        releaseUrl: APP_UPDATE_CONFIG.releasesPage
+        releaseUrl: APP_UPDATE_CONFIG.releasesPage,
+        ...announcementState
       };
       renderAppUpdateCard();
+      window.setTimeout(() => maybeShowAnnouncement(), 180);
       return state.appUpdate;
     }
     const appInfo = plugin?.getAppInfo ? await plugin.getAppInfo() : null;
@@ -1657,6 +2385,15 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
     let latestNotes = previous.latestNotes || '';
     let downloadUrl = previous.downloadUrl || '';
     let releaseUrl = previous.releaseUrl || '';
+    let announcementActive = Boolean(previous.announcementActive);
+    let announcementId = previous.announcementId || '';
+    let announcementTitle = previous.announcementTitle || '';
+    let announcementBody = previous.announcementBody || '';
+    let announcementPublishedAt = previous.announcementPublishedAt || '';
+    let announcementLevel = previous.announcementLevel || 'info';
+    let announcementActionLabel = previous.announcementActionLabel || '';
+    let announcementActionUrl = previous.announcementActionUrl || '';
+    let announcementRepeatAfterHours = Number(previous.announcementRepeatAfterHours || 0);
 
     if (shouldFetchLatest) {
       const manifest = await fetchLatestAppRelease();
@@ -1667,6 +2404,28 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
       latestNotes = String(manifest.notes || '').trim();
       downloadUrl = cleanText(manifest.downloadUrl) || APP_UPDATE_CONFIG.stableApkUrl;
       releaseUrl = cleanText(manifest.releaseUrl) || APP_UPDATE_CONFIG.releasesPage;
+      let announcement = manifest.announcement && typeof manifest.announcement === 'object'
+        ? manifest.announcement
+        : {};
+      try {
+        const remoteAnnouncement = await fetchLatestAnnouncement();
+        if (remoteAnnouncement && typeof remoteAnnouncement === 'object') {
+          announcement = remoteAnnouncement;
+        }
+      } catch {
+        // 独立公告读取失败时继续使用 Release 清单中的公告，不阻断更新检查。
+      }
+      ({
+        announcementActive,
+        announcementId,
+        announcementTitle,
+        announcementBody,
+        announcementPublishedAt,
+        announcementLevel,
+        announcementActionLabel,
+        announcementActionUrl,
+        announcementRepeatAfterHours
+      } = normalizeAnnouncementManifest(announcement, manifest.publishedAt));
     }
 
     const currentVersionName = cleanText(appInfo?.versionName);
@@ -1696,17 +2455,33 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
       latestNotes,
       downloadUrl,
       releaseUrl: releaseUrl || APP_UPDATE_CONFIG.releasesPage,
+      announcementActive,
+      announcementId,
+      announcementTitle,
+      announcementBody,
+      announcementPublishedAt,
+      announcementLevel,
+      announcementActionLabel,
+      announcementActionUrl,
+      announcementRepeatAfterHours,
       canInstallPackages,
       updateAvailable,
       lastCheckedAt: shouldFetchLatest ? new Date().toISOString() : previous.lastCheckedAt,
       error: ''
     };
   } catch (error) {
+    let announcementState = {};
+    try {
+      announcementState = normalizeAnnouncementManifest(await fetchLatestAnnouncement());
+    } catch {
+      // 更新清单与公告都不可用时，仅展示检查失败状态。
+    }
     state.appUpdate = {
       ...getAppUpdateState(),
       supported: isNativeAppPlatform(),
       checking: false,
-      error: error.message || '检查更新失败'
+      error: error.message || '检查更新失败',
+      ...announcementState
     };
     if (!silent) {
       showToast(state.appUpdate.error);
@@ -1714,6 +2489,7 @@ async function refreshAppUpdateState({ silent = true, force = false } = {}) {
   }
 
   renderAppUpdateCard();
+  window.setTimeout(() => maybeShowAnnouncement(), 180);
   return state.appUpdate;
 }
 
@@ -1776,6 +2552,12 @@ async function startAppUpdate() {
 function openLatestReleasePage() {
   const target = getAppUpdateState().releaseUrl || APP_UPDATE_CONFIG.releasesPage;
   void openSiteLink(target);
+}
+
+function openLatestAnnouncement() {
+  if (!maybeShowAnnouncement({ force: true })) {
+    showToast('当前没有新公告');
+  }
 }
 
 function getNotificationId(seed) {
@@ -1900,11 +2682,11 @@ function buildScheduledNotifications() {
       if (notifyAt.getTime() <= now + 30000) return;
       const range = getPeriodRange(instance.course.periods);
       notifications.push({
-        id: getNotificationId(`course:${instance.week}:${instance.weekday}:${instance.course.name}:${range.start}`),
+        id: getNotificationId(`course:${formatDateKey(instance.date)}:${getCourseIdentity(instance.course)}:${range.start}`),
         title: `下节课：${instance.course.name}`,
         body: `${getRelativeDayLabel(instance.date, instance)} ${range.start}-${range.end} · ${instance.course.room || '地点待定'}${instance.course.teacher ? ` · ${instance.course.teacher}` : ''}`,
-        schedule: { at: notifyAt },
-        extra: { type: 'course', courseName: instance.course.name }
+        schedule: { at: notifyAt, allowWhileIdle: true },
+        extra: { type: 'course', courseName: instance.course.name, date: formatDateKey(instance.date) }
       });
     });
   }
@@ -1921,7 +2703,7 @@ function buildScheduledNotifications() {
           id: getNotificationId(`todo:${todo.id}`),
           title: `待办：${todo.title}`,
           body: todo.note || formatTodoDueText(todo),
-          schedule: { at: notifyAt },
+          schedule: { at: notifyAt, allowWhileIdle: true },
           extra: { type: 'todo', todoId: todo.id }
         });
       });
@@ -2019,7 +2801,7 @@ async function sendImmediateNotification(title, body) {
         id: getNotificationId(`grade:${Date.now()}`),
         title,
         body,
-        schedule: { at: new Date(Date.now() + 1000) },
+        schedule: { at: new Date(Date.now() + 1000), allowWhileIdle: true },
         extra: { type: 'grade' }
       }]
     });
@@ -2526,7 +3308,7 @@ function getScoreClass(score) {
 function buildEmptyState(icon, title, desc) {
   return `
     <div class="empty-state">
-      <div class="empty-icon">${escapeHtml(icon)}</div>
+      <div class="empty-icon" aria-hidden="true"></div>
       <div class="empty-title">${escapeHtml(title)}</div>
       <div class="empty-desc">${escapeHtml(desc)}</div>
     </div>
@@ -2566,24 +3348,23 @@ function renderHome() {
   const heroHighlight = document.getElementById('hero-highlight');
   if (!hasAnyData()) {
     heroHighlight.innerHTML = `
-      <strong>${state.server.available ? '本地同步服务已就绪。' : '当前是空白安装态。'}</strong><br>
-      ${state.server.available ? '在设置页输入账号、密码和验证码即可直接登录，后续由本地服务自动同步。' : '如果还没启动本地服务，先执行 npm install && npm start；也可以继续使用书签脚本手动导入。'}
+      <strong>${state.server.available ? '同步服务已就绪' : '等待首次同步'}</strong>
+      <span>${state.server.available ? '前往设置登录教务系统' : '可在设置中导入教务数据'}</span>
     `;
   } else if (nextCourse) {
     heroHighlight.innerHTML = `
-      <strong>下节课：${escapeHtml(nextCourse.course.name)}</strong><br>
-      ${escapeHtml(getRelativeDayLabel(nextCourse.date, nextCourse))} · ${escapeHtml(getPeriodText(nextCourse.course.periods))} · ${escapeHtml(nextCourse.course.room || '地点待定')}
-      ${nextCourseLeadStatus?.text ? `<br><span class="hero-room-hint ${escapeHtml(nextCourseLeadStatus.tone || 'neutral')}">${escapeHtml(nextCourseLeadStatus.text)}</span>` : ''}
+      <strong>下节 · ${escapeHtml(nextCourse.course.name)}</strong>
+      <span>${escapeHtml(getRelativeDayLabel(nextCourse.date, nextCourse))} · ${escapeHtml(getPeriodText(nextCourse.course.periods))} · ${escapeHtml(nextCourse.course.room || '地点待定')}</span>
     `;
   } else if (upcomingExams[0]) {
     heroHighlight.innerHTML = `
-      <strong>最近考试：${escapeHtml(upcomingExams[0].name)}</strong><br>
-      ${escapeHtml(upcomingExams[0].date)} · ${escapeHtml(upcomingExams[0].time || '时间待定')} · 还剩 ${escapeHtml(String(upcomingExams[0].countdown))} 天
+      <strong>考试 · ${escapeHtml(upcomingExams[0].name)}</strong>
+      <span>${escapeHtml(upcomingExams[0].date)} · 还剩 ${escapeHtml(String(upcomingExams[0].countdown))} 天</span>
     `;
   } else {
     heroHighlight.innerHTML = `
-      <strong>${escapeHtml(String(syncedSections.length))} 个模块已就绪。</strong><br>
-      你可以离线查看已经缓存到本机的课表、成绩和考试安排。
+      <strong>${escapeHtml(String(syncedSections.length))} 个模块可离线查看</strong>
+      <span>课表、成绩与考试数据已保存在本机</span>
     `;
   }
 
@@ -2593,7 +3374,7 @@ function renderHome() {
   } else if (!nextCourse) {
     nextCourseCard.innerHTML = `
       <div class="next-card-state">
-        <div class="next-card-icon">🌤️</div>
+        <div class="next-card-icon" aria-hidden="true">—</div>
         <div class="next-card-copy">
           <div class="next-card-title">近期没有可显示的课程</div>
           <div class="next-card-meta">如果课表为空，先同步课表页面；如果已经放假，可以手动切换周次查看历史课程。</div>
@@ -2604,7 +3385,7 @@ function renderHome() {
     const range = getPeriodRange(nextCourse.course.periods);
     nextCourseCard.innerHTML = `
       <div class="next-card-state">
-        <div class="next-card-icon">${isCourseLive(nextCourse.course, nextCourse.weekday, nextCourse.week) ? '⏱️' : '🎒'}</div>
+        <div class="next-card-icon" aria-hidden="true">${isCourseLive(nextCourse.course, nextCourse.weekday, nextCourse.week) ? '进行中' : '下一节'}</div>
         <div class="next-card-copy">
           <div class="next-card-title">${escapeHtml(nextCourse.course.name)}</div>
           <div class="next-card-meta">
@@ -2701,9 +3482,11 @@ function getScheduleNowLineTopWithMetrics(slotHeight, slotGap) {
 
 function getScheduleLayoutMetrics() {
   const compact = window.innerWidth <= 480;
+  const availableHeight = window.innerHeight - 54 - 66 - 46 - 26;
+  const fittedSlotHeight = Math.floor(availableHeight / PERIOD_SEQUENCE.length);
   return {
     compact,
-    slotHeight: compact ? 34 : SCHEDULE_SLOT_HEIGHT,
+    slotHeight: compact ? Math.max(34, Math.min(44, fittedSlotHeight)) : SCHEDULE_SLOT_HEIGHT,
     slotGap: compact ? 2 : SCHEDULE_SLOT_GAP
   };
 }
@@ -2751,13 +3534,16 @@ function renderSchedule(weekday = state.currentWeekday || getTodayWeekday()) {
     : Array.from({ length: 7 }, () => null);
   const allCourses = getAllScheduleCourses();
   const activeCourses = viewMode === 'week'
-    ? allCourses.filter(course => isCourseActiveInWeek(course, selectedWeek))
+    ? Object.values(weeklyEntries).flat().map(entry => entry.course)
     : [...allCourses];
   const focusDay = viewMode === 'week' && isCurrentWeek ? currentDay : weekday;
   const focusCourses = weeklyEntries[focusDay] || [];
   const busiestDay = [1, 2, 3, 4, 5, 6, 7]
     .map(day => ({ day, count: (weeklyEntries[day] || []).length }))
     .sort((left, right) => right.count - left.count || left.day - right.day)[0];
+  const cancelledOverrides = viewMode === 'week'
+    ? state.scheduleOverrides.filter(item => item.week === selectedWeek && item.action === 'cancel')
+    : [];
 
   summary.innerHTML = `
     <div class="schedule-stats">
@@ -2780,6 +3566,12 @@ function renderSchedule(weekday = state.currentWeekday || getTodayWeekday()) {
           : `1-${getMaxWeek()}周`)}</strong>
       </div>
     </div>
+    ${cancelledOverrides.length ? `
+      <div class="course-detail-callout neutral mt-12">
+        <div class="course-detail-callout-title">本周停课</div>
+        <div class="course-detail-callout-text">${cancelledOverrides.map(item => `${escapeHtml(getOverrideCourseName(item))} <button class="btn btn-soft btn-sm" type="button" onclick="clearScheduleOverrideById('${escapeJsString(item.id)}')">恢复</button>`).join('　')}</div>
+      </div>
+    ` : ''}
   `;
 
   if (activeCourses.length === 0) {
@@ -2870,7 +3662,7 @@ function renderSchedule(weekday = state.currentWeekday || getTodayWeekday()) {
 
                   return `
                     <button
-                      class="schedule-block ${isLive ? 'live' : ''} ${entry.course.isCustom ? 'custom' : ''}"
+                      class="schedule-block ${isLive ? 'live' : ''} ${entry.course.isCustom ? 'custom' : ''} ${entry.course.override?.action === 'move' ? 'adjusted' : ''}"
                       type="button"
                       style="top:${top}px;height:${height}px;left:calc(${leftPercent}% + 3px);width:calc(${widthPercent}% - 6px);--schedule-block-start:${theme.start};--schedule-block-end:${theme.end};--schedule-block-text:${theme.text};"
                       title="${escapeHtml(title)}"
@@ -3012,6 +3804,20 @@ function openScheduleDetail(detailId, rerenderOnly = false) {
       <div class="course-detail-callout-text">${escapeHtml(detailLeadStatus.text)}</div>
     </div>
   ` : '';
+  const courseOverride = detail.course.override || getCourseOverride(detail.course, detail.selectedWeek);
+  const overrideHtml = detail.viewMode === 'week' ? `
+    <div class="course-detail-section">
+      <div class="course-detail-section-title">本周调课</div>
+      <div class="course-detail-empty">${courseOverride
+        ? (courseOverride.action === 'cancel' ? '本周已标记为停课。' : `本周已调整到 ${WEEKDAY_NAMES[courseOverride.weekday]} ${getPeriodText(courseOverride.periods)}${courseOverride.note ? `：${escapeHtml(courseOverride.note)}` : ''}`)
+        : '没有本周例外，按教务系统的常规排课显示。'}</div>
+      <div class="action-row mt-12">
+        <button class="btn btn-outline btn-sm" type="button" onclick="openScheduleOverrideModal('${escapeJsString(detailId)}', 'cancel')">本周停课</button>
+        <button class="btn btn-primary btn-sm" type="button" onclick="openScheduleOverrideModal('${escapeJsString(detailId)}', 'move')">调整时间 / 地点</button>
+        ${courseOverride ? `<button class="btn btn-soft btn-sm" type="button" onclick="clearScheduleOverride('${escapeJsString(detailId)}')">恢复常规课表</button>` : ''}
+      </div>
+    </div>
+  ` : '';
 
   content.innerHTML = `
     <div class="course-detail-hero">
@@ -3038,6 +3844,7 @@ function openScheduleDetail(detailId, rerenderOnly = false) {
       </div>
       ${detailLeadStatusHtml}
     </div>
+    ${overrideHtml}
 
     <div class="course-detail-section">
       <div class="course-detail-section-title">成绩联动</div>
@@ -3310,7 +4117,10 @@ function updateHeaderForPage(page = state.currentPage) {
     title.textContent = PAGE_TITLES[page] || PAGE_TITLES.home;
   }
   if (leftButton) {
-    leftButton.textContent = isSubPage(page) ? '←' : '⟳';
+    leftButton.innerHTML = isSubPage(page)
+      ? '<span class="header-arrow" aria-hidden="true">←</span>'
+      : '<svg aria-hidden="true"><use href="#i-refresh"></use></svg>';
+    leftButton.setAttribute('aria-label', isSubPage(page) ? '返回上一页' : '刷新当前页面');
     leftButton.title = isSubPage(page) ? '返回上一页' : '刷新当前页面';
   }
 }
@@ -4059,6 +4869,7 @@ function renderSites() {
 }
 
 function renderSettings() {
+  applyColorTheme(state.colorTheme);
   const loginGuide = document.getElementById('settings-login-guide');
   if (loginGuide) {
     loginGuide.innerHTML = buildSettingsLoginGuideHtml();
@@ -4072,6 +4883,11 @@ function renderSettings() {
   const passwordInput = document.getElementById('login-password');
   if (passwordInput && !passwordInput.value && loginPrefs.rememberPassword && loginPrefs.password) {
     passwordInput.value = loginPrefs.password;
+  }
+  if (passwordInput && !passwordInput.value && isNativeSyncAvailable() && (state.server.credentialsSaved || state.server.rememberPassword)) {
+    passwordInput.placeholder = '密码已安全保存，无需重复输入';
+  } else if (passwordInput && !passwordInput.value) {
+    passwordInput.placeholder = '密码';
   }
   const rememberInput = document.getElementById('login-remember');
   if (rememberInput) {
@@ -4101,6 +4917,26 @@ function renderSettings() {
   renderServerStatus();
 }
 
+let nativeRecoveryPromise = null;
+
+async function recoverNativeSessionAndSync({ silent = true } = {}) {
+  if (!isNativeSyncAvailable()) return null;
+  if (nativeRecoveryPromise) return nativeRecoveryPromise;
+  nativeRecoveryPromise = (async () => {
+    const wasLoggedIn = Boolean(state.server.loggedIn);
+    const payload = await refreshServerStatus({ silent: true, check: false });
+    if (payload?.status?.loggedIn) {
+      await syncNow({ silent: true });
+      if (!silent && !wasLoggedIn) showToast('登录已自动恢复，数据已同步');
+    }
+    renderSettings();
+    return payload;
+  })().finally(() => {
+    nativeRecoveryPromise = null;
+  });
+  return nativeRecoveryPromise;
+}
+
 function renderCurrentPage() {
   if (state.currentPage === 'home') renderHome();
   if (state.currentPage === 'schedule') renderSchedule(state.currentWeekday || getTodayWeekday());
@@ -4122,6 +4958,9 @@ function navigate(page) {
   document.getElementById(`page-${page}`).classList.add('active');
   document.querySelector(`.nav-item[data-page="${page}"]`)?.classList.add('active');
   updateHeaderForPage(page);
+  document.getElementById('app')?.classList.toggle('schedule-focus-mode', page === 'schedule');
+  document.getElementById('app')?.classList.toggle('home-focus-mode', page === 'home');
+  if (page === 'schedule') window.scrollTo({ top: 0, behavior: 'auto' });
   if (page === 'classrooms' && state.server.available && state.server.loggedIn) {
     void ensureClassroomOptions().catch(() => {});
   }
@@ -4208,6 +5047,10 @@ async function importData() {
       state.customCourses = normalizeStoredCustomCourses(parsed.customCourses);
       await dbSet('customCourses', state.customCourses);
     }
+    if (Array.isArray(parsed.scheduleOverrides)) {
+      state.scheduleOverrides = normalizeScheduleOverrides(parsed.scheduleOverrides);
+      await dbSet('scheduleOverrides', state.scheduleOverrides);
+    }
     if (Array.isArray(parsed.todos)) {
       state.todos = normalizeStoredTodos(parsed.todos);
       await dbSet('todos', state.todos);
@@ -4272,6 +5115,7 @@ async function clearData() {
   state.selectedWeek = 1;
   state.gradeSelections = {};
   state.customCourses = [];
+  state.scheduleOverrides = [];
   state.todos = [];
   await cancelScheduledNotifications();
   state.notificationSettings = {
@@ -4282,6 +5126,7 @@ async function clearData() {
   await dbSet('main', null);
   await dbSet('gradeSelections', {});
   await dbSet('customCourses', []);
+  await dbSet('scheduleOverrides', []);
   await dbSet('todos', []);
   await persistNotificationSettings();
   await updateNativeWidgetData({ silent: true });
@@ -4293,6 +5138,7 @@ async function clearData() {
 function buildBackupPayload() {
   const payload = normalizeData(state.data);
   payload.customCourses = normalizeStoredCustomCourses(state.customCourses);
+  payload.scheduleOverrides = normalizeScheduleOverrides(state.scheduleOverrides);
   payload.todos = normalizeStoredTodos(state.todos);
   payload.meta.fullExport = true;
   payload.meta.sections = SECTION_KEYS.slice();
@@ -4456,6 +5302,106 @@ async function persistCustomCourses() {
   await dbSet('customCourses', state.customCourses);
   await scheduleNotifications({ silent: true });
   await updateNativeWidgetData({ silent: true });
+}
+
+async function persistScheduleOverrides() {
+  state.scheduleOverrides = normalizeScheduleOverrides(state.scheduleOverrides);
+  await dbSet('scheduleOverrides', state.scheduleOverrides);
+  await scheduleNotifications({ silent: true });
+  await updateNativeWidgetData({ silent: true });
+}
+
+function setOverrideFieldVisibility() {
+  const action = document.getElementById('schedule-override-action')?.value || 'cancel';
+  const fields = document.getElementById('schedule-override-move-fields');
+  if (fields) fields.hidden = action !== 'move';
+}
+
+function openScheduleOverrideModal(detailId, action = 'move') {
+  const detail = state.scheduleDetailMap[detailId];
+  if (!detail || detail.viewMode !== 'week') {
+    showToast('请在周视图中选择需要调整的课程');
+    return;
+  }
+  const baseCourse = detail.course._baseCourse || detail.course;
+  const existing = getCourseOverride(baseCourse, detail.selectedWeek);
+  state.editingScheduleOverrideId = existing?.id || '';
+  const modal = document.getElementById('schedule-override-modal');
+  if (!modal) return;
+  document.getElementById('schedule-override-course').textContent = `${baseCourse.name} · 第 ${detail.selectedWeek} 周`;
+  setInputValue('schedule-override-action', existing?.action || action);
+  setInputValue('schedule-override-weekday', existing?.weekday || detail.weekday);
+  const periods = existing?.periods?.length ? existing.periods : detail.periods;
+  setInputValue('schedule-override-start-period', periods[0] || 1);
+  setInputValue('schedule-override-end-period', periods[periods.length - 1] || 1);
+  setInputValue('schedule-override-room', existing?.room || baseCourse.room || '');
+  setInputValue('schedule-override-teacher', existing?.teacher || baseCourse.teacher || '');
+  setInputValue('schedule-override-note', existing?.note || '');
+  modal.dataset.detailId = detailId;
+  setOverrideFieldVisibility();
+  modal.classList.add('open');
+}
+
+function closeScheduleOverrideModal() {
+  const modal = document.getElementById('schedule-override-modal');
+  if (modal) modal.classList.remove('open');
+  state.editingScheduleOverrideId = '';
+}
+
+async function saveScheduleOverride() {
+  const modal = document.getElementById('schedule-override-modal');
+  const detail = state.scheduleDetailMap[modal?.dataset.detailId || ''];
+  if (!detail) return;
+  const baseCourse = detail.course._baseCourse || detail.course;
+  const action = document.getElementById('schedule-override-action')?.value === 'move' ? 'move' : 'cancel';
+  const weekday = Number.parseInt(document.getElementById('schedule-override-weekday')?.value, 10);
+  const startPeriod = Number.parseInt(document.getElementById('schedule-override-start-period')?.value, 10);
+  const endPeriod = Number.parseInt(document.getElementById('schedule-override-end-period')?.value, 10);
+  const periods = action === 'move' ? buildPeriodRangeFromInputs(startPeriod, endPeriod) : [];
+  if (action === 'move' && (!weekday || weekday > 7 || !periods.length)) {
+    showToast('请填写正确的调课日期和节次');
+    return;
+  }
+  const override = normalizeScheduleOverride({
+    id: state.editingScheduleOverrideId || createLocalId('override'),
+    sourceCourseId: getCourseIdentity(baseCourse), week: detail.selectedWeek, action, weekday, periods,
+    room: document.getElementById('schedule-override-room')?.value || '',
+    teacher: document.getElementById('schedule-override-teacher')?.value || '',
+    note: document.getElementById('schedule-override-note')?.value || '', updatedAt: new Date().toISOString()
+  });
+  if (!override) return;
+  state.scheduleOverrides = state.scheduleOverrides.filter(item => !(item.sourceCourseId === override.sourceCourseId && item.week === override.week));
+  state.scheduleOverrides.push(override);
+  await persistScheduleOverrides();
+  closeScheduleOverrideModal();
+  closeScheduleDetail();
+  renderCurrentPage();
+  if (state.currentPage !== 'home') renderHome();
+  showToast(action === 'cancel' ? '已标记本周停课' : '已保存本周调课');
+}
+
+async function clearScheduleOverride(detailId) {
+  const detail = state.scheduleDetailMap[detailId];
+  if (!detail) return;
+  const key = getCourseIdentity(detail.course);
+  const before = state.scheduleOverrides.length;
+  state.scheduleOverrides = state.scheduleOverrides.filter(item => !(item.sourceCourseId === key && item.week === detail.selectedWeek));
+  if (before === state.scheduleOverrides.length) return;
+  await persistScheduleOverrides();
+  closeScheduleDetail();
+  renderCurrentPage();
+  if (state.currentPage !== 'home') renderHome();
+  showToast('已恢复常规课表');
+}
+
+async function clearScheduleOverrideById(id) {
+  const override = state.scheduleOverrides.find(item => item.id === id);
+  if (!override) return;
+  state.scheduleOverrides = state.scheduleOverrides.filter(item => item.id !== id);
+  await persistScheduleOverrides();
+  renderCurrentPage();
+  if (state.currentPage !== 'home') renderHome();
+  showToast('已恢复常规课表');
 }
 
 function getCustomCourseById(id) {
@@ -4840,6 +5786,7 @@ function bindStaticEvents() {
     if (event.key !== 'Escape') return;
     closeImportModal();
     closeScheduleDetail();
+    closeScheduleOverrideModal();
     closeCustomCourseModal();
     closeTodoModal();
     closeGradeHelp();
@@ -4860,8 +5807,12 @@ async function init() {
 
   await openDB();
   const cached = await dbGet('main');
+  state.customThemeColor = normalizeCustomThemeColor((await dbGet('customThemeColor')) || window.localStorage.getItem('njust-custom-theme-color'));
+  state.colorTheme = normalizeColorTheme((await dbGet('colorTheme')) || window.localStorage.getItem('njust-ui-theme'));
+  applyColorTheme(state.colorTheme);
   state.gradeSelections = (await dbGet('gradeSelections')) || {};
   state.customCourses = normalizeStoredCustomCourses(await dbGet('customCourses'));
+  state.scheduleOverrides = normalizeScheduleOverrides(await dbGet('scheduleOverrides'));
   state.todos = normalizeStoredTodos(await dbGet('todos'));
   state.loginPrefs = normalizeLoginPrefs(await dbGet('loginPrefs'));
   state.notificationSettings = {
@@ -4875,18 +5826,29 @@ async function init() {
   }
   state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || 1);
   await refreshServerStatus({ silent: true });
+  if (isNativeSyncAvailable() && (state.server.rememberPassword || state.server.credentialsSaved)) {
+    await recoverNativeSessionAndSync({ silent: true }).catch(() => {});
+  }
   void refreshAppUpdateState({ silent: true, force: true });
   if (state.server.available) {
     refreshCaptcha({ silent: true });
     if (isNativeSyncAvailable()) {
       window.setInterval(() => {
-        if (!state.server.loggedIn) return;
-        keepAliveNativeSession().catch(() => {});
+        if (document.hidden) return;
+        if (state.server.loggedIn) {
+          keepAliveNativeSession().catch(() => {});
+        } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+          recoverNativeSessionAndSync({ silent: true }).catch(() => {});
+        }
       }, window.NJUSTNativeSync.keepAliveIntervalMs || 8 * 60 * 1000);
 
       window.setInterval(() => {
-        if (document.hidden || !state.server.loggedIn) return;
-        syncNow({ silent: true });
+        if (document.hidden) return;
+        if (state.server.loggedIn) {
+          syncNow({ silent: true });
+        } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+          recoverNativeSessionAndSync({ silent: true }).catch(() => {});
+        }
       }, 10 * 60 * 1000);
 
       document.addEventListener('visibilitychange', () => {
@@ -4897,8 +5859,8 @@ async function init() {
           syncNow({ silent: true });
           return;
         }
-        if (state.server.rememberPassword) {
-          refreshServerStatus({ silent: true });
+        if (state.server.rememberPassword || state.server.credentialsSaved) {
+          recoverNativeSessionAndSync({ silent: false }).catch(() => {});
         }
       });
     } else {
@@ -4925,6 +5887,17 @@ async function init() {
         appPlugin.addListener('appStateChange', ({ isActive }) => {
           if (!isActive) {
             scheduleNotifications({ silent: true }).catch(() => {});
+            return;
+          }
+          // Android may recreate the WebView after the process is reclaimed.
+          // Re-check here as well as on visibilitychange so restored encrypted
+          // credentials can rebuild a fresh teaching-system session.
+          if (state.server.loggedIn) {
+            keepAliveNativeSession().catch(() => {});
+            refreshServerStatus({ silent: true, check: true });
+            syncNow({ silent: true });
+          } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+            recoverNativeSessionAndSync({ silent: false }).catch(() => {});
           }
         });
       }

@@ -26,7 +26,13 @@ async function main() {
   await copyDir('js');
   await copyFile('index.html');
   await copyFile('manifest.json');
+  await copyFile('announcement.json');
   await copyFile('sw.js');
+  await copyFile('node_modules/tesseract.js/dist/tesseract.min.js', 'vendor/tesseract/tesseract.min.js');
+  await copyFile('node_modules/tesseract.js/dist/worker.min.js', 'vendor/tesseract/worker.min.js');
+  await copyFile('node_modules/tesseract.js-core/tesseract-core-lstm.wasm.js', 'vendor/tesseract-core/tesseract-core-lstm.wasm.js');
+  await copyFile('node_modules/tesseract.js-core/tesseract-core-lstm.wasm', 'vendor/tesseract-core/tesseract-core-lstm.wasm');
+  await copyFile('eng.traineddata', 'vendor/tesseract-data/eng.traineddata');
 
   const capacitorSource = path.join(ROOT_DIR, 'node_modules', '@capacitor', 'core', 'dist', 'capacitor.js');
   const capacitorTarget = path.join(OUTPUT_DIR, 'js', 'capacitor.js');

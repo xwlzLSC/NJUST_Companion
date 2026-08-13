@@ -285,7 +285,7 @@ function renderCountdownBanner() {
     examHtml = `
       <div class="countdown-item exam ${urgency}">
         <div class="countdown-label">${upcomingExam.name}</div>
-        <div class="countdown-value exam-countdown">${d === 0 ? '📢 今天考试！' : `⏳ 还有 ${d} 天`}</div>
+        <div class="countdown-value exam-countdown">${d === 0 ? '今天考试' : `还有 ${d} 天`}</div>
       </div>
     `;
   }
@@ -551,7 +551,7 @@ function renderPredictPanel() {
   if (!featureState.predictVisible) {
     container.innerHTML = `
       <div class="card predict-toggle-card">
-        <button class="btn btn-outline btn-sm" onclick="togglePredictPanel()">🔮 展开分数预测器</button>
+        <button class="btn btn-outline btn-sm" onclick="togglePredictPanel()">展开分数预测器</button>
       </div>
     `;
     return;
@@ -612,13 +612,13 @@ function renderPredictPanel() {
   container.innerHTML = `
     <div class="card predict-panel">
       <div class="predict-panel-header">
-        <span>🔮 分数预测器 <small>（${rows.length} 门本学期课程 + ${historyRows.length} 门历史成绩）</small></span>
+        <span>分数预测器 <small>（${rows.length} 门本学期课程 + ${historyRows.length} 门历史成绩）</small></span>
         <button class="btn btn-soft btn-sm" onclick="togglePredictPanel()">收起</button>
       </div>
       <div class="predict-history-hint">历史成绩会自动参与总绩点计算，本学期课程可继续输入预测分数。</div>
       <div class="predict-panel-body">
         ${renderRows.length === 0
-          ? '<div class="course-detail-empty" style="padding:16px;">🎉 当前没有可用于预测的本学期课程，请先同步课表。</div>'
+          ? '<div class="course-detail-empty" style="padding:16px;">当前没有可用于预测的本学期课程，请先同步课表。</div>'
           : renderRows.join('')}
       </div>
       <div id="predict-stats-panel" class="predict-stats-panel"></div>
@@ -972,7 +972,7 @@ function buildCourseLinkedTodosHtml(courseName) {
   return `
     <div class="course-detail-section">
       <div class="course-detail-section-title">
-        📋 关联待办
+        关联待办
         <button class="inline-link-btn" onclick="openTodoLinkedToCourse('${escapeJsString(courseName)}')">+ 新建关联待办</button>
       </div>
       ${todos.length > 0

@@ -2,13 +2,17 @@
   const STORAGE_STATE_KEY = 'njust-native-sync-state';
   const STORAGE_DATA_KEY = 'njust-native-sync-data';
   const STORAGE_COOKIE_KEY = 'njust-native-sync-cookies';
-  const APP_VERSION = '2026-04-08-android-v6';
-  const KEEP_ALIVE_INTERVAL_MS = 8 * 60 * 1000;
+  const APP_VERSION = '2026-08-13-android-v9';
+  const KEEP_ALIVE_INTERVAL_MS = 2 * 60 * 1000;
 
   const PROFILE = {
     key: 'android-native',
     label: '安卓原生直连入口',
-    entryOrigin: 'http://202.119.81.113:8080',
+    entryOrigin: 'http://202.119.81.112:8080',
+    entryOrigins: [
+      'http://202.119.81.112:8080',
+      'http://202.119.81.113:8080'
+    ],
     loginPagePath: '/',
     captchaPath: '/verifycode.servlet',
     shardBases: [
@@ -50,7 +54,10 @@
       password: '',
       rememberPassword: false,
       autoLoginEnabled: false,
+      credentialsSaved: false,
+      recovering: false,
       profile: PROFILE.key,
+      entryOrigin: '',
       businessBase: '',
       lastSyncAt: '',
       lastError: '',
@@ -60,6 +67,7 @@
   }
 
   let nativeState = loadState();
+  let secureCredentialsPlugin = null;
 
   function getCapacitorExports() {
     return global.capacitorExports || null;
@@ -80,6 +88,15 @@
       Http: cap.CapacitorHttp,
       Cookies: cap.CapacitorCookies
     };
+  }
+
+  function getSecureCredentialsPlugin() {
+    if (secureCredentialsPlugin) return secureCredentialsPlugin;
+    const cap = getCapacitorExports();
+    const registerPlugin = cap?.registerPlugin || global.Capacitor?.registerPlugin;
+    if (!registerPlugin || !cap?.Capacitor?.isNativePlatform?.()) return null;
+    secureCredentialsPlugin = registerPlugin('SecureCredentials');
+    return secureCredentialsPlugin;
   }
 
   function loadState() {
@@ -104,10 +121,92 @@
   function saveState() {
     const storedState = {
       ...nativeState,
-      password: nativeState.rememberPassword ? nativeState.password : '',
+      // Passwords are kept in Android Keystore by SecureCredentialsPlugin.
+      // Never leave a second plaintext copy in WebView localStorage.
+      password: '',
       autoLoginEnabled: nativeState.rememberPassword ? nativeState.autoLoginEnabled : false
     };
     global.localStorage.setItem(STORAGE_STATE_KEY, JSON.stringify(storedState));
+    try {
+      global.dispatchEvent(new CustomEvent('njust-native-status', { detail: buildStatus(loadData()) }));
+    } catch {}
+  }
+
+  async function loadSecureCredentials({ force = false } = {}) {
+    if (!force && !nativeState.rememberPassword) return false;
+    // One-time migration for releases that stored the remembered password in
+    // WebView localStorage. Persist it through Keystore before saveState scrubs
+    // the legacy plaintext field.
+    if (nativeState.rememberPassword && nativeState.password) {
+      try {
+        await saveSecureCredentials(nativeState.username, nativeState.password);
+        saveState();
+        return true;
+      } catch {
+        nativeState.credentialsSaved = false;
+        saveState();
+        return false;
+      }
+    }
+    const plugin = getSecureCredentialsPlugin();
+    if (!plugin) {
+      nativeState.credentialsSaved = false;
+      if (!nativeState.password) {
+        nativeState.rememberPassword = false;
+        nativeState.autoLoginEnabled = false;
+      }
+      saveState();
+      return false;
+    }
+    try {
+      const credentials = await plugin.load();
+      const username = String(credentials?.username || '').trim();
+      const password = String(credentials?.password || '');
+      if (!username || !password) {
+        nativeState.credentialsSaved = false;
+        if (!nativeState.password) {
+          nativeState.rememberPassword = false;
+          nativeState.autoLoginEnabled = false;
+        }
+        saveState();
+        return false;
+      }
+      nativeState.username = username;
+      nativeState.password = password;
+      nativeState.rememberPassword = true;
+      nativeState.autoLoginEnabled = true;
+      nativeState.credentialsSaved = true;
+      saveState();
+      return true;
+    } catch {
+      nativeState.credentialsSaved = false;
+      if (!nativeState.password) {
+        nativeState.rememberPassword = false;
+        nativeState.autoLoginEnabled = false;
+      }
+      saveState();
+      return false;
+    }
+  }
+
+  async function saveSecureCredentials(username, password) {
+    const plugin = getSecureCredentialsPlugin();
+    if (!plugin) throw new Error('安全凭据组件不可用，无法记住密码');
+    if (!username || !password) throw new Error('账号或密码为空，无法记住密码');
+    await plugin.save({ username, password });
+    const verified = await plugin.load();
+    if (String(verified?.username || '').trim() !== String(username).trim() || String(verified?.password || '') !== String(password)) {
+      throw new Error('密码安全保存校验失败');
+    }
+    nativeState.credentialsSaved = true;
+    return true;
+  }
+
+  async function clearSecureCredentials() {
+    const plugin = getSecureCredentialsPlugin();
+    if (!plugin) return;
+    await plugin.clear().catch(() => {});
+    nativeState.credentialsSaved = false;
   }
 
   function loadData() {
@@ -151,6 +250,8 @@
 
   function resetRuntimeSession({ clearCredentials = false, clearData = false } = {}) {
     nativeState.loggedIn = false;
+    nativeState.recovering = false;
+    nativeState.entryOrigin = '';
     nativeState.businessBase = '';
     nativeState.lastError = '';
     nativeState.pendingCaptchaReady = false;
@@ -159,6 +260,7 @@
       nativeState.username = '';
       nativeState.password = '';
       nativeState.rememberPassword = false;
+      nativeState.credentialsSaved = false;
     }
     if (clearData) {
       clearRemoteData();
@@ -174,6 +276,8 @@
       autoSyncEnabled: nativeState.autoSyncEnabled,
       username: nativeState.username,
       rememberPassword: nativeState.rememberPassword,
+      credentialsSaved: nativeState.credentialsSaved,
+      recovering: nativeState.recovering,
       profile: nativeState.profile,
       profileLabel: PROFILE.label,
       businessBase: nativeState.businessBase,
@@ -195,7 +299,7 @@
   }
 
   function businessOrigin(base = nativeState.businessBase) {
-    return base ? new URL(base).origin : PROFILE.entryOrigin;
+    return base ? new URL(base).origin : (nativeState.entryOrigin || PROFILE.entryOrigin);
   }
 
   function uniqueUrls(urls) {
@@ -204,7 +308,8 @@
 
   function getCookieUrls() {
     return uniqueUrls([
-      PROFILE.entryOrigin,
+      nativeState.entryOrigin,
+      ...PROFILE.entryOrigins,
       nativeState.businessBase,
       resolveBusinessBase(nativeState.username),
       ...PROFILE.shardBases
@@ -348,25 +453,57 @@
     return PROFILE.shardBases[shardIndex];
   }
 
-  async function prepareCaptchaSession() {
-    await requestRaw(buildUrl(PROFILE.entryOrigin, PROFILE.loginPagePath), { responseType: 'arraybuffer' });
-    nativeState.pendingCaptchaReady = true;
-    saveState();
+  function getEntryOriginCandidates() {
+    return uniqueUrls([nativeState.entryOrigin, ...PROFILE.entryOrigins]);
+  }
+
+  async function prepareCaptchaSession(entryOrigin = '') {
+    const candidates = entryOrigin ? [entryOrigin] : getEntryOriginCandidates();
+    let lastError = null;
+    for (const candidate of candidates) {
+      try {
+        await requestRaw(buildUrl(candidate, PROFILE.loginPagePath), {
+          responseType: 'arraybuffer',
+          connectTimeout: 8000,
+          readTimeout: 10000
+        });
+        nativeState.entryOrigin = candidate;
+        nativeState.pendingCaptchaReady = true;
+        saveState();
+        return candidate;
+      } catch (error) {
+        lastError = error;
+      }
+    }
+    throw new Error(`教务登录入口暂不可达：${lastError?.message || '请检查网络后重试'}`);
   }
 
   async function fetchCaptcha(username) {
     if (!username) {
       throw new Error('请先输入学号，再刷新验证码');
     }
-    await prepareCaptchaSession();
-    const response = await requestRaw(
-      `${buildUrl(PROFILE.entryOrigin, PROFILE.captchaPath)}?t=${Date.now()}`,
-      { responseType: 'arraybuffer' }
-    );
-    return {
-      ok: true,
-      imageDataUrl: `data:image/png;base64,${normalizeBase64(response.data)}`
-    };
+    let lastError = null;
+    for (const candidate of getEntryOriginCandidates()) {
+      try {
+        await prepareCaptchaSession(candidate);
+        const response = await requestRaw(
+          `${buildUrl(candidate, PROFILE.captchaPath)}?t=${Date.now()}`,
+          { responseType: 'arraybuffer', connectTimeout: 8000, readTimeout: 10000 }
+        );
+        nativeState.entryOrigin = candidate;
+        nativeState.pendingCaptchaReady = true;
+        saveState();
+        return {
+          ok: true,
+          imageDataUrl: `data:image/png;base64,${normalizeBase64(response.data)}`
+        };
+      } catch (error) {
+        lastError = error;
+        nativeState.pendingCaptchaReady = false;
+      }
+    }
+    saveState();
+    throw new Error(`验证码获取失败：两个教务入口均不可达（${lastError?.message || '网络异常'}）`);
   }
 
   async function snapshotCookies() {
@@ -425,14 +562,17 @@
   }
 
   async function tryRecoverSession() {
+    await loadSecureCredentials({ force: true });
     if (!nativeState.username) return false;
     nativeState.businessBase = nativeState.businessBase || resolveBusinessBase(nativeState.username);
-    
-    const okFirstTry = await verifySession();
-    if (okFirstTry) return true;
+
+    if (await hasRuntimeCookies(nativeState.businessBase)) {
+      const okFirstTry = await verifySession();
+      if (okFirstTry) return true;
+    }
 
     const restored = await restoreCookiesFromSnapshot();
-    if (restored) {
+    if (restored && await hasRuntimeCookies(nativeState.businessBase)) {
       const okSecondTry = await verifySession();
       if (okSecondTry) return true;
     }
@@ -457,7 +597,10 @@
     }
 
     try {
-      const { html } = await fetchText(buildUrl(nativeState.businessBase, PROFILE.mainPath));
+      const { html } = await fetchText(buildUrl(nativeState.businessBase, PROFILE.mainPath), {
+        connectTimeout: 8000,
+        readTimeout: 10000
+      });
       nativeState.sessionCheckedAt = new Date().toISOString();
       nativeState.loggedIn = !isUnauthenticatedPage(html);
       if (!nativeState.loggedIn) {
@@ -478,6 +621,9 @@
 
   async function keepAlive() {
     if (!nativeState.loggedIn || !nativeState.businessBase) {
+      if (nativeState.rememberPassword || nativeState.credentialsSaved) {
+        await tryRecoverSession();
+      }
       return {
         ok: true,
         status: buildStatus(loadData()),
@@ -1040,7 +1186,13 @@
   async function getOcrWorker() {
     if (!globalOcrWorker) {
       if (!window.Tesseract) throw new Error('前端 OCR 引擎未能按时加载，请检查网络');
-      globalOcrWorker = await window.Tesseract.createWorker('eng');
+      globalOcrWorker = await window.Tesseract.createWorker('eng', 1, {
+        workerPath: './vendor/tesseract/worker.min.js',
+        corePath: './vendor/tesseract-core/tesseract-core-lstm.wasm.js',
+        langPath: './vendor/tesseract-data',
+        gzip: false,
+        workerBlobURL: false
+      });
       await globalOcrWorker.setParameters({
         tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
       });
@@ -1057,21 +1209,39 @@
   let autoLoginPromise = null;
   async function triggerAutoLoginBackground() {
     if (autoLoginPromise) return autoLoginPromise;
+    await loadSecureCredentials({ force: true });
     if (!canRecoverWithPassword()) return false;
     autoLoginPromise = (async () => {
+      nativeState.recovering = true;
+      nativeState.lastError = '';
+      saveState();
       try {
         await smartLogin({ username: nativeState.username, password: nativeState.password, autoRetry: true });
         return true;
-      } catch {
+      } catch (error) {
+        nativeState.lastError = error.message || '自动恢复登录失败';
+        saveState();
         return false;
       } finally {
+        nativeState.recovering = false;
+        saveState();
         autoLoginPromise = null;
       }
     })();
     return autoLoginPromise;
   }
 
-  async function smartLogin({ username, password, captcha, autoRetry = true, rememberPassword = nativeState.rememberPassword }) {
+  async function smartLogin(options = {}) {
+    let username = String(options.username || '').trim();
+    let password = String(options.password || '');
+    const captcha = options.captcha;
+    const autoRetry = options.autoRetry !== false;
+    const rememberPassword = options.rememberPassword ?? nativeState.rememberPassword;
+    if (!username || !password) {
+      await loadSecureCredentials({ force: true });
+      username = username || nativeState.username;
+      if (!password && username === nativeState.username) password = nativeState.password;
+    }
     if (!username || !password) {
       throw new Error('用户名、密码不能为空');
     }
@@ -1086,13 +1256,12 @@
     }
 
     let attempt = 0;
-    const maxAttempts = autoRetry ? 15 : 1;
+    const maxAttempts = autoRetry ? 4 : 1;
     let lastErrorMessage = '';
 
     while (attempt < maxAttempts) {
       attempt++;
       nativeState.loggedIn = false;
-      nativeState.username = '';
       nativeState.businessBase = '';
       nativeState.lastError = `登录中...`;
       saveState();
@@ -1104,7 +1273,7 @@
         
         let ocrText = '';
         let strictAttempts = 0;
-        while (ocrText.length !== 4 && strictAttempts < 10) {
+        while (ocrText.length !== 4 && strictAttempts < 3) {
           strictAttempts++;
           const payload = await fetchCaptcha(username);
           ocrText = await solveCaptchaOCR(payload.imageDataUrl);
@@ -1127,14 +1296,15 @@
       }
 
       try {
-        const response = await requestRaw(buildUrl(PROFILE.entryOrigin, PROFILE.loginPath), {
+        const loginOrigin = nativeState.entryOrigin || PROFILE.entryOrigin;
+        const response = await requestRaw(buildUrl(loginOrigin, PROFILE.loginPath), {
           method: 'POST',
           data: form.toString(),
           responseType: 'arraybuffer',
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
-            Origin: PROFILE.entryOrigin,
-            Referer: buildUrl(PROFILE.entryOrigin, PROFILE.loginPagePath)
+            Origin: loginOrigin,
+            Referer: buildUrl(loginOrigin, PROFILE.loginPagePath)
           }
         });
 
@@ -1164,11 +1334,16 @@
 
         nativeState.loggedIn = true;
         nativeState.username = username;
-        nativeState.password = password;
+        nativeState.password = rememberPassword ? password : '';
         nativeState.rememberPassword = Boolean(rememberPassword);
         nativeState.autoLoginEnabled = Boolean(rememberPassword);
         nativeState.profile = PROFILE.key;
         nativeState.lastError = '';
+        if (nativeState.rememberPassword) {
+          await saveSecureCredentials(username, password);
+        } else {
+          await clearSecureCredentials();
+        }
         saveState();
         await snapshotCookies();
         return;
@@ -1210,6 +1385,7 @@
     const { Cookies } = requirePlugins();
     await Cookies.clearAllCookies();
     clearCookieSnapshot();
+    await clearSecureCredentials();
     resetRuntimeSession({ clearCredentials: true, clearData: true });
     saveState();
     return {
@@ -1223,7 +1399,15 @@
     nativeState.username = String(username || nativeState.username || '').trim();
     nativeState.rememberPassword = Boolean(rememberPassword);
     nativeState.password = nativeState.rememberPassword ? String(password || nativeState.password || '') : '';
-    nativeState.autoLoginEnabled = nativeState.rememberPassword && nativeState.loggedIn;
+    nativeState.autoLoginEnabled = nativeState.rememberPassword && Boolean(nativeState.username && nativeState.password);
+    if (nativeState.rememberPassword && nativeState.username && nativeState.password) {
+      await saveSecureCredentials(nativeState.username, nativeState.password);
+    } else if (nativeState.rememberPassword) {
+      const restored = await loadSecureCredentials({ force: true });
+      if (!restored) throw new Error('请先输入账号密码，再开启记住密码');
+    } else if (!nativeState.rememberPassword) {
+      await clearSecureCredentials();
+    }
     saveState();
     return {
       ok: true,
@@ -1233,6 +1417,7 @@
   }
 
   async function getStatus(options = {}) {
+    await loadSecureCredentials({ force: true });
     if (nativeState.username && nativeState.loggedIn) {
       nativeState.businessBase = nativeState.businessBase || resolveBusinessBase(nativeState.username);
       if (nativeState.businessBase) {
@@ -1240,6 +1425,8 @@
         if (!runtimeReady) {
           await restoreCookiesFromSnapshot();
         }
+        const restoredReady = await hasRuntimeCookies(nativeState.businessBase);
+        if (!restoredReady) nativeState.loggedIn = false;
       }
     }
     if (nativeState.username && !nativeState.loggedIn) {

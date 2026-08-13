@@ -4,8 +4,8 @@ set -euo pipefail
 APP_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 cd "$APP_DIR"
 
-if ! command -v node >/dev/null 2>&1; then
-  echo "node 未安装，无法继续部署" >&2
+if ! command -v cargo >/dev/null 2>&1; then
+  echo "Rust/Cargo 未安装，无法继续部署" >&2
   exit 1
 fi
 
@@ -27,7 +27,7 @@ set +a
 
 mkdir -p "${APP_STORAGE_DIR:-storage}" logs
 
-npm ci --omit=dev
+cargo build --release --manifest-path rust-server/Cargo.toml
 
 if ! command -v pm2 >/dev/null 2>&1; then
   npm install -g pm2

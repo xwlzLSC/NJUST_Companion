@@ -1,4 +1,4 @@
-const CACHE_NAME = 'njust-kb-v22';
+const CACHE_NAME = 'njust-kb-v23';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -9,6 +9,7 @@ const STATIC_ASSETS = [
   './js/native-sync.js',
   './js/parser.js',
   './manifest.json',
+  './announcement.json',
   './icons/icon-192.png',
   './icons/icon-512.png'
 ];
@@ -43,6 +44,7 @@ self.addEventListener('fetch', event => {
     || requestUrl.pathname.endsWith('/js/native-sync.js')
     || requestUrl.pathname.endsWith('/js/parser.js')
     || requestUrl.pathname.endsWith('/manifest.json')
+    || requestUrl.pathname.endsWith('/announcement.json')
   );
 
   if (isAppShellAsset || event.request.mode === 'navigate') {

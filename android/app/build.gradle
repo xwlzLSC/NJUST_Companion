@@ -9,9 +9,9 @@ if (keystorePropertiesFile.exists()) {
 }
 
 def versionCodeValue = Integer.parseInt(
-    (System.getenv('APP_VERSION_CODE') ?: project.findProperty('APP_VERSION_CODE') ?: '1').toString()
+    (System.getenv('APP_VERSION_CODE') ?: project.findProperty('APP_VERSION_CODE') ?: '10').toString()
 )
-def versionNameValue = (System.getenv('APP_VERSION_NAME') ?: project.findProperty('APP_VERSION_NAME') ?: '1.0.0').toString()
+def versionNameValue = (System.getenv('APP_VERSION_NAME') ?: project.findProperty('APP_VERSION_NAME') ?: '2.1.0').toString()
 
 def releaseStoreFileValue = (System.getenv('ANDROID_SIGNING_STORE_FILE') ?: keystoreProperties.getProperty('storeFile', '')).toString()
 def releaseStorePasswordValue = (System.getenv('ANDROID_SIGNING_STORE_PASSWORD') ?: keystoreProperties.getProperty('storePassword', '')).toString()

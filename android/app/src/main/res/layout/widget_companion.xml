@@ -14,7 +14,7 @@
         android:singleLine="true"
         android:ellipsize="end"
         android:text="@string/widget_overview_name"
-        android:textColor="#DDEAFF"
+        android:textColor="#E0D4EC"
         android:textSize="12sp"
         android:textStyle="bold" />
 
@@ -47,7 +47,7 @@
         android:layout_marginTop="4dp"
         android:singleLine="true"
         android:ellipsize="end"
-        android:textColor="#DDEAFF"
+        android:textColor="#E0D4EC"
         android:textSize="13sp" />
 
     <TextView
@@ -58,7 +58,7 @@
         android:layout_marginTop="4dp"
         android:maxLines="2"
         android:ellipsize="end"
-        android:textColor="#DDEAFF"
+        android:textColor="#E0D4EC"
         android:textSize="13sp" />
 
     <TextView
@@ -67,6 +67,6 @@
         android:layout_height="wrap_content"
         android:singleLine="true"
         android:ellipsize="end"
-        android:textColor="#BBD4FF"
+        android:textColor="#CBB9DC"
         android:textSize="11sp" />
 </LinearLayout>

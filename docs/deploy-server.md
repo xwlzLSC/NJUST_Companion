@@ -17,7 +17,7 @@
         ->
 反向代理（Caddy / Nginx）
         ->
-Node 服务（server.js）
+Rust 服务（rust-server/）
         ->
 学校教务系统
 ```
@@ -28,8 +28,8 @@ Node 服务（server.js）
 
 建议使用一台 Linux 服务器，并满足：
 
-- 已安装 Node.js 20+
-- 已安装 npm
+- 已安装 Rust 1.85+（含 Cargo）
+- 已安装 Node.js 20+ 与 npm（仅用于 PM2 进程管理）
 - 已安装 `rsync`
 - 已开启 SSH 登录
 - 有一个可用域名
@@ -84,7 +84,7 @@ KEEP_ALIVE_INTERVAL_MS=480000
 说明：
 
 - `HOST=127.0.0.1`
-  - 推荐让 Node 只监听本机，然后由 Caddy/Nginx 对外暴露
+  - 推荐让 Rust 服务只监听本机，然后由 Caddy/Nginx 对外暴露
 - `PUBLIC_ORIGIN`
   - 你的真实 HTTPS 地址
 - `APP_STORAGE_DIR`
@@ -159,9 +159,11 @@ KEEP_ALIVE_INTERVAL_MS=480000
 
 ```bash
 sudo apt update
-sudo apt install -y rsync curl
+sudo apt install -y rsync curl build-essential pkg-config libssl-dev
 curl -fsSL https://deb.nodesource.com/setup_20.x | sudo -E bash -
 sudo apt install -y nodejs
+curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh -s -- -y
+source "$HOME/.cargo/env"
 sudo npm install -g pm2
 sudo mkdir -p /srv/njust-companion
 sudo chown -R $USER:$USER /srv/njust-companion

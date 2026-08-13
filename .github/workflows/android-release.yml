@@ -117,7 +117,18 @@ jobs:
             releaseUrl: process.env.RELEASE_URL,
             downloadUrl: process.env.DOWNLOAD_URL,
             versionedDownloadUrl: process.env.VERSIONED_DOWNLOAD_URL,
-            notes: fs.readFileSync('release-notes.txt', 'utf8').trim()
+            notes: fs.readFileSync('release-notes.txt', 'utf8').trim(),
+            announcement: {
+              active: true,
+              id: `update-${process.env.APP_VERSION_CODE}`,
+              title: `南理教务助手 ${process.env.APP_VERSION_NAME} 已发布`,
+              body: fs.readFileSync('release-notes.txt', 'utf8').trim(),
+              publishedAt: process.env.PUBLISHED_AT,
+              level: 'important',
+              actionLabel: '立即更新',
+              actionUrl: process.env.RELEASE_URL,
+              repeatAfterHours: 24
+            }
           };
           fs.writeFileSync(process.env.MANIFEST_PATH, `${JSON.stringify(manifest, null, 2)}\n`, 'utf8');
           EOF

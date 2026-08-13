@@ -1,13 +1,13 @@
 services:
   - type: web
     name: njust-companion
-    runtime: node
+    runtime: rust
     plan: starter
     region: singapore
     autoDeployTrigger: off
     rootDir: .
-    buildCommand: npm install
-    startCommand: npm start
+    buildCommand: cargo build --release --manifest-path rust-server/Cargo.toml
+    startCommand: ./rust-server/target/release/njust-companion-server
     healthCheckPath: /api/health
     envVars:
       - key: HOST

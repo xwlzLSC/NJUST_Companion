@@ -18,6 +18,7 @@ public class MainActivity extends BridgeActivity {
     public void onCreate(Bundle savedInstanceState) {
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(NJUSTWidgetPlugin.class);
+        registerPlugin(SecureCredentialsPlugin.class);
         super.onCreate(savedInstanceState);
         migrateWebRuntimeOnAppUpgrade();
     }

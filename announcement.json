@@ -1,0 +1,11 @@
+{
+  "active": true,
+  "id": "2026-08-ui-refresh",
+  "title": "新版界面与登录体验已经准备好",
+  "body": "本次版本重做了首页、课表和设置页，新增自定义调色盘，并修复手机端验证码刷新、密码安全保存、掉线自动登录与同步状态显示。以后有重要通知，也会通过这里及时告诉你。",
+  "publishedAt": "2026-08-13T03:30:00Z",
+  "level": "info",
+  "actionLabel": "知道了",
+  "actionUrl": "",
+  "repeatAfterHours": 0
+}

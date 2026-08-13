@@ -457,8 +457,24 @@ function parseGrades(doc) {
     return -1;
   };
 
-  const nameIdx = getIndex('课程名', '课程');
+  const getExactIndex = (...names) => {
+    for (const name of names) {
+      const found = headers.findIndex(header => header === name);
+      if (found !== -1) return found;
+    }
+    return -1;
+  };
+
+  // “课程”会同时命中“课程编号”；先精确寻找名称列，再使用排除编号列的兜底。
+  let nameIdx = getExactIndex('课程名称', '课程名', '课程');
   const codeIdx = getIndex('课程编号', '课程代码');
+  if (nameIdx < 0) {
+    nameIdx = headers.findIndex((header, index) => (
+      index !== codeIdx
+      && header.includes('课程')
+      && !/(编号|代码|性质|属性|类别)/.test(header)
+    ));
+  }
   const creditIdx = getIndex('学分');
   const hoursIdx = getIndex('总学时', '学时');
   const scoreIdx = getIndex('成绩', '期末');
@@ -545,7 +561,15 @@ function parseExams(doc) {
     return -1;
   };
 
-  const nameIdx = getIndex('课程名', '课程');
+  const codeIdx = getIndex('课程编号', '课程代码');
+  let nameIdx = headers.findIndex(header => ['课程名称', '课程名', '课程'].includes(header));
+  if (nameIdx < 0) {
+    nameIdx = headers.findIndex((header, index) => (
+      index !== codeIdx
+      && header.includes('课程')
+      && !/(编号|代码|性质|属性|类别)/.test(header)
+    ));
+  }
   const dateIdx = getIndex('考试日期', '日期');
   const timeIdx = getIndex('考试时间', '时间');
   const roomIdx = getIndex('考场', '地点', '教室');

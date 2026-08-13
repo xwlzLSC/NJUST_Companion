@@ -1,6 +1,9 @@
 node_modules/
 mobile-web/
 storage/
+.rustup/
+.cargo/
+rust-server/target/
 
 .tmp-*.html
 .tmp-*.js
@@ -9,8 +12,23 @@ storage/
 .env.*
 !.env.example
 logs/
+output/
+.playwright-cli/
+.claude/
 
-eng.traineddata
+# 本地调试与阶段性总结，不属于发布源码
+/AUTO-LOGIN-EXPLAINED.md
+/CODE-CHANGES.md
+/FINAL-COMPLETE.md
+/MOBILE-OCR-SOLUTION.md
+/PROJECT-COMPLETE.md
+/QUICKSTART.md
+/README-GLM-INTEGRATION.md
+/SKIP-CAPTCHA-EXPLAINED.md
+/UI-OPTIMIZATION-COMPLETE.md
+/test-final.js
+/test-glm-*.js
+/微信图片_*.png
 
 android/.gradle/
 android/build/

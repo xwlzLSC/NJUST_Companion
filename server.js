@@ -8,6 +8,7 @@ const { CookieJar } = require('tough-cookie');
 const { JSDOM } = require('jsdom');
 const iconv = require('iconv-lite');
 const Tesseract = require('tesseract.js');
+const Jimp = require('jimp');
 const parser = require('./js/parser.js');
 
 const ROOT_DIR = __dirname;
@@ -26,6 +27,8 @@ const STATE_FILE = path.join(STORAGE_DIR, 'server-state.json');
 const AUTO_SYNC_INTERVAL_MS = Number(process.env.AUTO_SYNC_INTERVAL_MS || 10 * 60 * 1000);
 const KEEP_ALIVE_INTERVAL_MS = Number(process.env.KEEP_ALIVE_INTERVAL_MS || 8 * 60 * 1000);
 const APP_VERSION = '2026-04-08-sync-v10';
+const GLM_API_KEY = process.env.GLM_API_KEY || '';
+const GLM_API_URL = 'https://open.bigmodel.cn/api/paas/v4/chat/completions';
 
 function loadEnvFile(filePath) {
   if (!fsSync.existsSync(filePath)) return;
@@ -102,10 +105,119 @@ async function getOcrWorker() {
   return globalOcrWorker;
 }
 
+async function preprocessCaptchaImage(buffer) {
+  try {
+    const image = await Jimp.read(buffer);
+
+    // 图像预处理增强识别率
+    image
+      .resize(image.bitmap.width * 2, image.bitmap.height * 2) // 放大2倍
+      .greyscale() // 灰度化
+      .contrast(0.5) // 增加对比度
+      .normalize(); // 归一化
+
+    // 二值化处理
+    image.scan(0, 0, image.bitmap.width, image.bitmap.height, function (x, y, idx) {
+      const red = this.bitmap.data[idx];
+      const threshold = 128;
+      const value = red > threshold ? 255 : 0;
+      this.bitmap.data[idx] = value;     // R
+      this.bitmap.data[idx + 1] = value; // G
+      this.bitmap.data[idx + 2] = value; // B
+    });
+
+    return await image.getBufferAsync(Jimp.MIME_PNG);
+  } catch (error) {
+    console.warn('[图像预处理] 失败，使用原始图片:', error.message);
+    return buffer;
+  }
+}
+
 async function solveCaptchaOCR(buffer) {
+  // 预处理图像
+  const processedBuffer = await preprocessCaptchaImage(buffer);
+
   const worker = await getOcrWorker();
-  const ret = await worker.recognize(buffer);
+  const ret = await worker.recognize(processedBuffer);
   return ret.data.text.replace(/[^A-Za-z0-9]/g, '');
+}
+
+async function solveCaptchaGLM(buffer) {
+  if (!GLM_API_KEY) {
+    throw new Error('GLM_API_KEY not configured');
+  }
+
+  const base64Image = buffer.toString('base64');
+  const payload = {
+    model: 'glm-4.6v-flash',
+    messages: [
+      {
+        role: 'user',
+        content: [
+          {
+            type: 'image_url',
+            image_url: {
+              url: `data:image/png;base64,${base64Image}`
+            }
+          },
+          {
+            type: 'text',
+            text: '这是一个验证码图片，请识别图片中的字符。只返回识别出的字符，不要有任何其他说明文字。验证码由4个字符组成，可能包含数字和字母（大小写）。'
+          }
+        ]
+      }
+    ],
+    temperature: 0.1,
+    max_tokens: 10
+  };
+  const headers = {
+    'Authorization': `Bearer ${GLM_API_KEY}`,
+    'Content-Type': 'application/json'
+  };
+
+  // 对 1305 限流与网络错误做同图重试，再降级到 OCR
+  let lastError = '';
+  for (let attempt = 0; attempt < 3; attempt++) {
+    try {
+      const response = await axios.post(GLM_API_URL, payload, { headers, timeout: 10000 });
+      const result = response.data?.choices?.[0]?.message?.content || '';
+      const cleaned = result.replace(/[^A-Za-z0-9]/g, '');
+
+      if (cleaned.length === 4) {
+        return cleaned;
+      }
+      lastError = `GLM 返回的验证码无效: ${result}`;
+    } catch (error) {
+      const code = error.response?.data?.error?.code;
+      const message = error.response?.data?.error?.message || error.message;
+      lastError = message;
+      const retryable = code === 1305 || !error.response; // 1305 限流或网络错误
+      if (retryable && attempt < 2) {
+        await wait(1500);
+        continue;
+      }
+      break;
+    }
+  }
+  throw new Error(`GLM API error: ${lastError || 'unknown'}`);
+}
+
+async function solveCaptcha(buffer) {
+  // 策略：优先使用 GLM-4.6V-Flash，失败时回退到增强版 OCR
+  if (GLM_API_KEY) {
+    try {
+      const glmResult = await solveCaptchaGLM(buffer);
+      console.log(`[验证码识别] GLM-4.6V 识别结果: ${glmResult}`);
+      return glmResult;
+    } catch (error) {
+      console.warn(`[验证码识别] GLM-4.6V 识别失败: ${error.message}, 回退到增强版 OCR`);
+    }
+  }
+
+  // 回退到增强版 OCR（带图像预处理）
+  const ocrResult = await solveCaptchaOCR(buffer);
+  console.log(`[验证码识别] 增强版 OCR 识别结果: ${ocrResult}`);
+  return ocrResult;
 }
 
 function createEmptyData() {
@@ -572,16 +684,23 @@ async function smartLogin({ username, password, captcha, autoRetry = true }) {
     let finalCaptcha = captcha;
     if (!finalCaptcha || (autoRetry && attempt > 1)) {
       appState.lastError = `登录中... 正在智能识别验证码 (尝试 ${attempt}/${maxAttempts})`;
-      
-      let ocrText = '';
+
+      let captchaText = '';
       let strictAttempts = 0;
-      while (ocrText.length !== 4 && strictAttempts < 10) {
+      while (captchaText.length !== 4 && strictAttempts < 10) {
         strictAttempts++;
         const buf = await fetchCaptcha(username);
-        ocrText = await solveCaptchaOCR(buf);
+        try {
+          captchaText = await solveCaptcha(buf);
+        } catch (error) {
+          console.warn(`[验证码识别] 第 ${strictAttempts} 次识别失败: ${error.message}`);
+        }
       }
-      finalCaptcha = ocrText || '1234';
-      
+      if (captchaText.length !== 4) {
+        throw new Error('自动识别验证码失败（连续多次无法识别），请手动输入验证码重试');
+      }
+      finalCaptcha = captchaText;
+
       pendingCaptchaReady = true;
     }
 

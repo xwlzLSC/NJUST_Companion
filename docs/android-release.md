@@ -69,16 +69,16 @@ keyPassword=你的 key 密码
 
 正式版必须保证：
 
-- `APP_VERSION_NAME` 可以改成 `2.0.1`
-- `APP_VERSION_CODE` 必须是递增整数，例如 `2`
+- `APP_VERSION_NAME` 可以改成 `2.1.0`
+- `APP_VERSION_CODE` 必须是递增整数，例如 `10`
 
 PowerShell 示例：
 
 ```powershell
 $env:JAVA_HOME="C:\Program Files\Microsoft\jdk-21.0.8.9-hotspot"
 $env:ANDROID_HOME="$env:LOCALAPPDATA\Android\Sdk"
-$env:APP_VERSION_NAME="2.0.1"
-$env:APP_VERSION_CODE="2"
+$env:APP_VERSION_NAME="2.1.0"
+$env:APP_VERSION_CODE="10"
 npm run apk:release
 ```
 

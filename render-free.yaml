@@ -1,0 +1,22 @@
+# Render Blueprint Configuration (0-Cost Free Version)
+# 对应 docs/iphone-free-guide.md
+services:
+  - type: web
+    name: njust-companion-free
+    runtime: node
+    plan: free # 使用免费计划
+    region: singapore
+    autoDeployTrigger: off
+    rootDir: .
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /api/health
+    envVars:
+      - key: HOST
+        value: 0.0.0.0
+      - key: TRUST_PROXY
+        value: "true"
+      - key: APP_STORAGE_DIR
+        value: /tmp/storage # 免费版无持久化硬盘，使用临时目录
+      - key: AUTO_SYNC_INTERVAL_MS
+        value: "0" # 免费版休眠期间无法自动同步，设为 0 禁用以节省资源

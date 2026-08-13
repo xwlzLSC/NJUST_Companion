@@ -3,34 +3,66 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-  <meta name="theme-color" content="#2b6fd6">
+  <meta name="theme-color" content="#512888">
   <meta name="mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="南理教务助手">
   <meta name="description" content="南京理工大学课表、成绩、考试安排的本地离线查看工具">
   <title>南理教务助手</title>
+  <script>
+    try {
+      const storedTheme = localStorage.getItem('njust-ui-theme') || 'crimson';
+      const storedCustomColor = localStorage.getItem('njust-custom-theme-color') || '#6f3fa0';
+      document.documentElement.dataset.theme = storedTheme;
+      if (storedTheme === 'custom' && /^#[0-9a-f]{6}$/i.test(storedCustomColor)) {
+        document.documentElement.style.setProperty('--color-primary', storedCustomColor);
+      }
+    } catch {
+      document.documentElement.dataset.theme = 'crimson';
+    }
+  </script>
   <link rel="manifest" href="./manifest.json">
+  <link rel="icon" href="./icons/icon-192.png">
   <link rel="apple-touch-icon" href="./icons/icon-192.png">
   <link rel="stylesheet" href="./css/app.css">
-  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <script src="./vendor/tesseract/tesseract.min.js" onerror="this.onerror=null;this.src='https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js'"></script>
 </head>
 <body>
+<svg class="icon-sprite" aria-hidden="true">
+  <symbol id="i-refresh" viewBox="0 0 24 24"><path d="M20 11a8 8 0 1 0-2.34 5.66M20 4v7h-7"/></symbol>
+  <symbol id="i-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.56V21h-4v-.08A1.7 1.7 0 0 0 9 19.37a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.63 15 1.7 1.7 0 0 0 3.08 14H3v-4h.08A1.7 1.7 0 0 0 4.63 9a1.7 1.7 0 0 0-.34-1.88l-.06-.06 2.83-2.83.06.06A1.7 1.7 0 0 0 9 4.63 1.7 1.7 0 0 0 10 3.08V3h4v.08A1.7 1.7 0 0 0 15 4.63a1.7 1.7 0 0 0 1.88-.34l.06-.06 2.83 2.83-.06.06A1.7 1.7 0 0 0 19.37 9 1.7 1.7 0 0 0 20.92 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></symbol>
+  <symbol id="i-home" viewBox="0 0 24 24"><path d="m3 11 9-7 9 7"/><path d="M5 10v10h14V10M9 20v-6h6v6"/></symbol>
+  <symbol id="i-calendar" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M8 3v4M16 3v4M3 10h18M8 14h.01M12 14h.01M16 14h.01M8 18h.01M12 18h.01"/></symbol>
+  <symbol id="i-chart" viewBox="0 0 24 24"><path d="M4 20V10M10 20V4M16 20v-7M22 20H2"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M6 3h8l4 4v14H6zM14 3v5h5M9 12h6M9 16h6"/></symbol>
+  <symbol id="i-building" viewBox="0 0 24 24"><path d="M4 21V7l8-4 8 4v14M2 21h20M8 9h2M14 9h2M8 13h2M14 13h2M10 21v-4h4v4"/></symbol>
+  <symbol id="i-link" viewBox="0 0 24 24"><path d="m10 13 4-4M7.5 16.5l-1 1a3.54 3.54 0 0 1-5-5l3-3a3.54 3.54 0 0 1 5 0M16.5 7.5l1-1a3.54 3.54 0 0 1 5 5l-3 3a3.54 3.54 0 0 1-5 0"/></symbol>
+  <symbol id="i-check" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="3"/><path d="m7 12 3 3 7-7"/></symbol>
+  <symbol id="i-cloud" viewBox="0 0 24 24"><path d="M7 18h10a4 4 0 0 0 .5-7.97A6 6 0 0 0 6.1 8.6 4.5 4.5 0 0 0 7 18Z"/><path d="m9 14 3-3 3 3M12 11v7"/></symbol>
+  <symbol id="i-wifi" viewBox="0 0 24 24"><path d="M5 12.55a11 11 0 0 1 14 0M8.5 16a6 6 0 0 1 7 0M12 20h.01M2 9a16 16 0 0 1 20 0"/></symbol>
+  <symbol id="i-clock" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M12 7v5l3 2"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="7"/><path d="m20 20-4-4"/></symbol>
+      <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19zM12 9v5M12 17h.01"/></symbol>
+      <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
+  <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 8h13v6a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6zM17 10h2a2 2 0 0 1 0 4h-2M7 3v2M11 3v2M15 3v2"/></symbol>
+</svg>
 <div id="app">
 
   <header class="app-header">
-    <button id="header-left-btn" class="header-btn" onclick="handleHeaderLeftAction()" title="刷新当前页面">⟳</button>
+    <button id="header-left-btn" class="header-btn" onclick="handleHeaderLeftAction()" title="刷新当前页面" aria-label="刷新当前页面"><svg><use href="#i-refresh"></use></svg></button>
     <div class="header-meta">
       <div class="header-kicker">NJUST Companion</div>
       <div class="title" id="header-title">南理教务助手</div>
     </div>
-    <button class="header-btn" onclick="navigate('settings')" title="打开设置">⚙</button>
+    <button class="header-btn" onclick="navigate('settings')" title="打开设置" aria-label="打开设置"><svg><use href="#i-settings"></use></svg></button>
   </header>
 
   <main class="page-content">
 
     <section id="page-home" class="page active">
       <div class="hero-panel">
+        <div class="hero-label"><span>Today / Campus</span><span>NJUST</span></div>
         <div class="hero-head">
           <div class="hero-copy">
             <div class="hero-week" id="hero-week">等待初始化</div>
@@ -44,53 +76,57 @@
         <div class="hero-highlight" id="hero-highlight"></div>
       </div>
 
+      <div class="section-title home-next-title">接下来</div>
+      <div class="card home-next-card" id="next-course-card"></div>
+
+      <div class="quick-heading">
+        <span>常用功能</span>
+        <small>8 SERVICES</small>
+      </div>
       <div class="quick-grid">
         <button class="quick-card" onclick="navigate('schedule')">
-          <span class="quick-icon">📅</span>
+          <span class="quick-icon"><svg><use href="#i-calendar"></use></svg></span>
           <span class="quick-title">查看课表</span>
           <span class="quick-desc">按周查看课程</span>
         </button>
         <button class="quick-card" onclick="navigate('grades')">
-          <span class="quick-icon">📊</span>
+          <span class="quick-icon"><svg><use href="#i-chart"></use></svg></span>
           <span class="quick-title">成绩统计</span>
           <span class="quick-desc">学期筛选与检索</span>
         </button>
         <button class="quick-card" onclick="navigate('exams')">
-          <span class="quick-icon">📝</span>
+          <span class="quick-icon"><svg><use href="#i-file"></use></svg></span>
           <span class="quick-title">考试安排</span>
           <span class="quick-desc">倒计时与考场</span>
         </button>
         <button class="quick-card" onclick="navigate('classrooms')">
-          <span class="quick-icon">🏫</span>
+          <span class="quick-icon"><svg><use href="#i-building"></use></svg></span>
           <span class="quick-title">空闲教室</span>
           <span class="quick-desc">按楼栋查询空房</span>
         </button>
         <button class="quick-card" onclick="navigate('sites')">
-          <span class="quick-icon">🔗</span>
+          <span class="quick-icon"><svg><use href="#i-link"></use></svg></span>
           <span class="quick-title">常用网站</span>
           <span class="quick-desc">教务与学习入口</span>
         </button>
         <button class="quick-card" onclick="navigate('todos')">
-          <span class="quick-icon">✅</span>
+          <span class="quick-icon"><svg><use href="#i-check"></use></svg></span>
           <span class="quick-title">待办事件</span>
           <span class="quick-desc">自定义提醒事项</span>
         </button>
         <button class="quick-card" onclick="navigate('settings')">
-          <span class="quick-icon">☁️</span>
+          <span class="quick-icon"><svg><use href="#i-cloud"></use></svg></span>
           <span class="quick-title">同步中心</span>
           <span class="quick-desc">登录、备份、设置</span>
         </button>
         <button class="quick-card" onclick="openCampusAuthShortcut()">
-          <span class="quick-icon">🔐</span>
+          <span class="quick-icon"><svg><use href="#i-wifi"></use></svg></span>
           <span class="quick-title">校园网</span>
           <span class="quick-desc">一键认证入口</span>
         </button>
       </div>
 
       <div id="semester-countdown-bar" hidden></div>
-
-      <div class="section-title">接下来</div>
-      <div class="card" id="next-course-card"></div>
 
       <div class="section-title">最近课程</div>
       <div class="card">
@@ -110,7 +146,6 @@
       <div class="control-card schedule-control-card">
         <div class="control-row">
           <div>
-            <div class="control-label">课表查询</div>
             <div class="control-value" id="selected-week-label">第 -- 周</div>
             <div class="control-hint" id="schedule-week-hint">同步课表后可切换周次</div>
           </div>
@@ -120,16 +155,20 @@
             <button class="week-arrow" onclick="changeSelectedWeek(1)" title="下一周">›</button>
           </div>
         </div>
-        <div class="action-row mt-12">
-          <button class="btn btn-primary btn-sm" onclick="openCustomCourseModal()">添加课程</button>
-          <button class="btn btn-outline btn-sm" onclick="openTodoModal()">新建待办</button>
-          <button class="btn btn-soft btn-sm" onclick="exportToICS()" title="导出到系统日历">📅 日历</button>
-          <button class="btn btn-soft btn-sm" onclick="openScheduleBgModal()" title="设置课表壁纸">🎨 壁纸</button>
-        </div>
-        <div id="schedule-summary" class="schedule-summary"></div>
+        <div id="schedule-footer-bar" class="schedule-footer-bar"></div>
+        <details class="schedule-tools">
+          <summary>课表工具</summary>
+          <div class="action-row">
+            <button class="btn btn-primary btn-sm" onclick="openCustomCourseModal()">添加课程</button>
+            <button class="btn btn-outline btn-sm" onclick="openTodoModal()">新建待办</button>
+            <button class="btn btn-soft btn-sm" onclick="exportToICS()" title="导出到系统日历">导出日历</button>
+            <button class="btn btn-soft btn-sm" onclick="openScheduleBgModal()" title="设置课表壁纸">课表壁纸</button>
+            <button class="btn btn-soft btn-sm" onclick="refreshCurrentPage()">刷新显示</button>
+          </div>
+        </details>
       </div>
       <div id="schedule-board"></div>
-      <div id="schedule-footer-bar" class="schedule-footer-bar"></div>
+      <div id="schedule-summary" class="schedule-summary" hidden></div>
     </section>
 
     <section id="page-grades" class="page">
@@ -166,15 +205,19 @@
       <div class="section-title">同步中心</div>
       <div id="settings-login-guide"></div>
       <div class="card">
-        <div class="setting-label">直接登录教务系统</div>
-        <div class="setting-desc" id="server-status-text">正在检测本地同步服务...</div>
+        <div class="login-card-heading">
+          <div class="setting-label">直接登录教务系统</div>
+          <div class="login-status-badge offline" id="server-status-text" role="status">未登录</div>
+        </div>
+        <div class="setting-desc login-status-detail" id="server-status-detail">登录后可自动同步并在掉线时恢复会话。</div>
         <div class="server-auth-grid mt-12">
           <input class="search-input" id="login-username" type="text" placeholder="学号 / 用户名">
           <input class="search-input" id="login-password" type="password" placeholder="密码">
           <div class="captcha-row" id="login-captcha-row">
-            <input class="search-input" id="login-captcha" type="text" maxlength="6" placeholder="验证码（选填）">
-            <img id="login-captcha-image" class="captcha-image" alt="验证码" onclick="refreshCaptcha()" />
+            <input class="search-input" id="login-captcha" type="text" inputmode="text" autocomplete="off" maxlength="6" placeholder="验证码（选填，留空自动识别）" aria-describedby="login-captcha-help">
+            <img id="login-captcha-image" class="captcha-image" alt="验证码图片；点击刷新" onclick="refreshCaptcha()" />
           </div>
+          <div class="captcha-help" id="login-captcha-help">留空验证码时将用浏览器本地 OCR 自动识别；若识别失败，请手动输入图片中的验证码后重试。</div>
           <label class="remember-login-row">
             <span>
               <strong>记住密码</strong>
@@ -258,6 +301,7 @@
           <button class="btn btn-outline btn-sm" type="button" onclick="checkAppUpdate()">检查更新</button>
           <button class="btn btn-primary btn-sm" type="button" id="app-update-action-btn" onclick="startAppUpdate()">立即更新</button>
           <button class="btn btn-soft btn-sm" type="button" id="app-update-release-btn" onclick="openLatestReleasePage()">查看发布页</button>
+          <button class="btn btn-soft btn-sm" type="button" onclick="openLatestAnnouncement()">查看公告</button>
         </div>
       </div>
 
@@ -266,19 +310,19 @@
         <div class="setting-desc">可把课程表、待办、考试或总览添加到安卓桌面。添加前会先刷新一次组件数据。</div>
         <div class="widget-action-grid mt-12">
           <button class="widget-action" type="button" onclick="pinHomeWidget('schedule')">
-            <span>📅</span>
+            <span><svg><use href="#i-calendar"></use></svg></span>
             <strong>课程表</strong>
           </button>
           <button class="widget-action" type="button" onclick="pinHomeWidget('todos')">
-            <span>✅</span>
+            <span><svg><use href="#i-check"></use></svg></span>
             <strong>待办</strong>
           </button>
           <button class="widget-action" type="button" onclick="pinHomeWidget('exams')">
-            <span>📝</span>
+            <span><svg><use href="#i-file"></use></svg></span>
             <strong>考试</strong>
           </button>
           <button class="widget-action" type="button" onclick="pinHomeWidget('overview')">
-            <span>🏠</span>
+            <span><svg><use href="#i-home"></use></svg></span>
             <strong>总览</strong>
           </button>
         </div>
@@ -286,9 +330,69 @@
         <div class="install-tip mt-12">如果手机桌面不支持一键添加，请长按桌面空白处，进入“小组件 / 桌面组件”，选择 NJUST Companion。</div>
       </div>
 
+      <div class="section-title">界面配色</div>
+      <div class="card appearance-card">
+        <div class="setting-label">主题色</div>
+        <div class="setting-desc">选择固定搭配，或打开调色盘自定义主色。切换后立即生效并保存在本机；墨黑主题同时切换为深色界面。</div>
+        <div class="theme-picker mt-12" id="theme-picker" role="radiogroup" aria-label="主题配色">
+          <button class="theme-option" type="button" data-theme="crimson" role="radio" onclick="setColorTheme('crimson')">
+            <span class="theme-swatch crimson"><i></i><i></i><i></i></span>
+            <span><strong>南理紫</strong><small>校园主色</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="navy" role="radio" onclick="setColorTheme('navy')">
+            <span class="theme-swatch navy"><i></i><i></i><i></i></span>
+            <span><strong>深海蓝</strong><small>冷静清晰</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="forest" role="radio" onclick="setColorTheme('forest')">
+            <span class="theme-swatch forest"><i></i><i></i><i></i></span>
+            <span><strong>松柏绿</strong><small>低饱和</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="ink" role="radio" onclick="setColorTheme('ink')">
+            <span class="theme-swatch ink"><i></i><i></i><i></i></span>
+            <span><strong>墨黑</strong><small>深色模式</small></span>
+          </button>
+          <button class="theme-option theme-custom-option" type="button" data-theme="custom" role="radio" aria-checked="false" aria-expanded="false" onclick="toggleCustomThemeEditor()">
+            <span class="custom-theme-preview" id="custom-theme-preview" aria-hidden="true"></span>
+            <span><strong>自定义</strong><small>打开应用内调色盘</small></span>
+            <span class="custom-theme-control">
+              <span id="custom-theme-value">#6F3FA0</span>
+              <span class="custom-theme-chevron" aria-hidden="true">›</span>
+            </span>
+          </button>
+        </div>
+        <div class="custom-theme-editor mt-12" id="custom-theme-editor" hidden>
+          <div class="custom-theme-presets" aria-label="常用自定义颜色">
+            <button type="button" style="--preset:#6f3fa0" aria-label="紫色" onclick="setCustomThemeColor('#6f3fa0')"></button>
+            <button type="button" style="--preset:#4059ad" aria-label="靛蓝" onclick="setCustomThemeColor('#4059ad')"></button>
+            <button type="button" style="--preset:#1677a6" aria-label="蓝色" onclick="setCustomThemeColor('#1677a6')"></button>
+            <button type="button" style="--preset:#25856d" aria-label="绿色" onclick="setCustomThemeColor('#25856d')"></button>
+            <button type="button" style="--preset:#a17719" aria-label="金色" onclick="setCustomThemeColor('#a17719')"></button>
+            <button type="button" style="--preset:#c25235" aria-label="橙红" onclick="setCustomThemeColor('#c25235')"></button>
+            <button type="button" style="--preset:#a83c63" aria-label="玫红" onclick="setCustomThemeColor('#a83c63')"></button>
+          </div>
+          <label class="theme-slider-row hue-slider-row">
+            <span>色相</span>
+            <input id="custom-theme-hue" type="range" min="0" max="360" value="273" oninput="previewCustomThemeFromSliders()" onchange="saveCustomThemeFromSliders()">
+          </label>
+          <label class="theme-slider-row saturation-slider-row">
+            <span>浓度</span>
+            <input id="custom-theme-saturation" type="range" min="15" max="90" value="43" oninput="previewCustomThemeFromSliders()" onchange="saveCustomThemeFromSliders()">
+          </label>
+          <label class="theme-slider-row lightness-slider-row">
+            <span>明暗</span>
+            <input id="custom-theme-lightness" type="range" min="25" max="70" value="44" oninput="previewCustomThemeFromSliders()" onchange="saveCustomThemeFromSliders()">
+          </label>
+          <label class="custom-theme-hex-row">
+            <span>HEX</span>
+            <input id="custom-theme-hex" type="text" value="#6F3FA0" maxlength="7" spellcheck="false" inputmode="text" onchange="setCustomThemeColor(this.value)">
+            <button type="button" class="btn btn-primary btn-sm" onclick="setCustomThemeColor(document.getElementById('custom-theme-hex').value)">应用</button>
+          </label>
+        </div>
+      </div>
+
       <div class="section-title">校园网</div>
       <div class="card" id="settings-wifi-card">
-        <div class="setting-label">🔐 校园网一键认证</div>
+        <div class="setting-label">校园网一键认证</div>
         <div class="setting-desc">此处账号密码为校园网认证账号（与教务系统账号<strong>不同</strong>，通常是学号+初始密码）。填写后点击认证会打开认证页面并提示账号。</div>
         <div id="wifi-auth-status" class="setting-desc" style="color:var(--color-accent,#4f8ef7);margin-top:4px;"></div>
         <div class="server-auth-grid mt-12">
@@ -296,7 +400,7 @@
           <input class="search-input" id="wifi-password" type="password" placeholder="校园网密码（必填）">
         </div>
         <div class="action-row mt-12">
-          <button class="btn btn-primary" onclick="authenticateWifi()">🌐 打开认证页</button>
+          <button class="btn btn-primary" onclick="authenticateWifi()">打开认证页</button>
           <button class="btn btn-outline" onclick="openWifiAuthPage()">直接跳转</button>
         </div>
       </div>
@@ -326,23 +430,23 @@
 
   <nav class="bottom-nav">
     <button class="nav-item active" data-page="home">
-      <span class="nav-icon">🏠</span>
+      <span class="nav-icon"><svg><use href="#i-home"></use></svg></span>
       <span>首页</span>
     </button>
     <button class="nav-item" data-page="schedule">
-      <span class="nav-icon">📅</span>
+      <span class="nav-icon"><svg><use href="#i-calendar"></use></svg></span>
       <span>课表</span>
     </button>
     <button class="nav-item" data-page="grades">
-      <span class="nav-icon">📊</span>
+      <span class="nav-icon"><svg><use href="#i-chart"></use></svg></span>
       <span>成绩</span>
     </button>
     <button class="nav-item" data-page="exams">
-      <span class="nav-icon">📝</span>
+      <span class="nav-icon"><svg><use href="#i-file"></use></svg></span>
       <span>考试</span>
     </button>
     <button class="nav-item" data-page="settings">
-      <span class="nav-icon">⚙️</span>
+      <span class="nav-icon"><svg><use href="#i-settings"></use></svg></span>
       <span>设置</span>
     </button>
   </nav>
@@ -416,6 +520,35 @@
   </div>
 </div>
 
+<div class="modal-overlay" id="schedule-override-modal" onclick="if(event.target===this) closeScheduleOverrideModal()">
+  <div class="modal-sheet form-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="modal-title">本周调课</div>
+    <div class="modal-desc" id="schedule-override-course"></div>
+    <div class="form-grid">
+      <select class="search-input form-span-2" id="schedule-override-action" onchange="setOverrideFieldVisibility()">
+        <option value="cancel">本周停课</option>
+        <option value="move">调整到新的时间或地点</option>
+      </select>
+      <div class="form-grid form-span-2" id="schedule-override-move-fields">
+        <select class="search-input" id="schedule-override-weekday">
+          <option value="1">周一</option><option value="2">周二</option><option value="3">周三</option>
+          <option value="4">周四</option><option value="5">周五</option><option value="6">周六</option><option value="7">周日</option>
+        </select>
+        <input class="search-input" id="schedule-override-start-period" type="number" min="1" max="14" placeholder="开始节次">
+        <input class="search-input" id="schedule-override-end-period" type="number" min="1" max="14" placeholder="结束节次">
+        <input class="search-input" id="schedule-override-room" type="text" placeholder="调整后的地点（可不填）">
+        <input class="search-input form-span-2" id="schedule-override-teacher" type="text" placeholder="调整后的教师（可不填）">
+      </div>
+      <input class="search-input form-span-2" id="schedule-override-note" type="text" placeholder="备注，例如：国庆调休补课">
+    </div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" type="button" onclick="closeScheduleOverrideModal()">取消</button>
+      <button class="btn btn-primary" type="button" onclick="saveScheduleOverride()">保存本周例外</button>
+    </div>
+  </div>
+</div>
+
 <div class="modal-overlay" id="todo-modal" onclick="if(event.target===this) closeTodoModal()">
   <div class="modal-sheet form-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
@@ -464,7 +597,7 @@
 <div class="modal-overlay" id="ics-help-modal" onclick="if(event.target===this) closeICSHelpModal()">
   <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
-    <div class="modal-title">📅 如何将 .ics 导入日历</div>
+    <div class="modal-title">如何将 .ics 导入日历</div>
     <div class="modal-desc">
       <strong>iOS（苹果）：</strong>找到下载的 .ics 文件，点击即可弹出"添加到日历"。<br><br>
       <strong>Android：</strong>用系统日历 App 或 Google 日历打开下载的 .ics 文件导入。<br><br>
@@ -479,7 +612,7 @@
 <div class="modal-overlay" id="schedule-bg-modal" onclick="if(event.target===this) closeScheduleBgModal()">
   <div class="modal-sheet" onclick="event.stopPropagation()">
     <div class="modal-handle"></div>
-    <div class="modal-title">🎨 课表壁纸设置</div>
+    <div class="modal-title">课表壁纸设置</div>
     <div class="modal-desc">上传一张背景图应用于课表网格区域。滑块只调节背景图深浅，不会改变课程块和课表文字透明度。</div>
     <div class="share-bg-preview-area">
       <div id="schedule-bg-preview" class="schedule-bg-preview">
@@ -488,8 +621,8 @@
       </div>
     </div>
     <div class="action-row mt-12">
-      <button class="btn btn-outline" onclick="clearSchedulePageBg()">🗑️ 清除背景</button>
-      <button class="btn btn-soft" onclick="selectScheduleBg('upload')">🖼️ 上传图片</button>
+      <button class="btn btn-outline" onclick="clearSchedulePageBg()">清除背景</button>
+      <button class="btn btn-soft" onclick="selectScheduleBg('upload')">上传图片</button>
       <input type="file" id="schedule-bg-upload" accept="image/*" style="display:none" onchange="handleScheduleBgUpload(this)">
     </div>
     <label class="setting-inline-field mt-12">
@@ -498,7 +631,7 @@
     </label>
     <div class="action-row mt-12">
       <button class="btn btn-outline" onclick="closeScheduleBgModal()">取消</button>
-      <button class="btn btn-primary" onclick="closeScheduleBgModal(); generateShareImage()">🎨 生成分享图</button>
+      <button class="btn btn-primary" onclick="closeScheduleBgModal(); generateShareImage()">生成分享图</button>
     </div>
   </div>
 </div>
@@ -513,7 +646,7 @@
     </div>
     <div class="action-row mt-12">
       <button class="btn btn-outline" onclick="closeSharePreviewModal()">关闭</button>
-      <button class="btn btn-primary" id="share-save-btn">💾 保存图片</button>
+      <button class="btn btn-primary" id="share-save-btn">保存图片</button>
     </div>
   </div>
 </div>
@@ -527,7 +660,7 @@
     </div>
 
     <div class="guide-hero mt-12">
-      <div class="guide-hero-icon">📚</div>
+      <div class="guide-hero-icon"><svg><use href="#i-calendar"></use></svg></div>
       <div class="guide-hero-copy">
         <strong>先登录，再设置学期开始日</strong>
         <span>登录成功后，课表周次、首页提示和后续同步会更准确。</span>
@@ -536,22 +669,22 @@
 
     <div class="guide-grid mt-12">
       <div class="guide-card">
-        <div class="guide-card-icon">🪪</div>
+        <div class="guide-card-icon">01</div>
         <strong>1. 输入账号</strong>
         <span>一般填学号或教务系统用户名。</span>
       </div>
       <div class="guide-card">
-        <div class="guide-card-icon">🔑</div>
+        <div class="guide-card-icon">02</div>
         <strong>2. 输入密码</strong>
         <span>填教务处密码，初始密码常见为学号。</span>
       </div>
       <div class="guide-card">
-        <div class="guide-card-icon">📅</div>
+        <div class="guide-card-icon">03</div>
         <strong>3. 设置学期开始日</strong>
         <span>登录后到设置页填写，周次才会自动算对。</span>
       </div>
       <div class="guide-card">
-        <div class="guide-card-icon">🔄</div>
+        <div class="guide-card-icon">04</div>
         <strong>4. 登录并同步</strong>
         <span>同步后会保存课表、成绩和考试到本机缓存。</span>
       </div>
@@ -567,6 +700,24 @@
     <div class="action-row mt-12">
       <button class="btn btn-outline" onclick="closeUsageGuide()">关闭</button>
       <button class="btn btn-primary" onclick="closeUsageGuide(); navigate('settings'); document.getElementById('settings-wifi-card')?.scrollIntoView({behavior:'smooth', block:'start'});">去登录</button>
+    </div>
+  </div>
+</div>
+
+<!-- 应用公告与更新提醒 -->
+<div class="modal-overlay announcement-overlay" id="announcement-modal" role="dialog" aria-modal="true" aria-labelledby="announcement-title" onclick="if(event.target===this) closeAnnouncementModal({remindLater:true})">
+  <div class="modal-sheet announcement-sheet" onclick="event.stopPropagation()">
+    <div class="modal-handle"></div>
+    <div class="announcement-mark" aria-hidden="true">
+      <svg><use href="#i-bell"></use></svg>
+    </div>
+    <div class="announcement-eyebrow" id="announcement-eyebrow">应用公告</div>
+    <div class="modal-title" id="announcement-title">公告标题</div>
+    <div class="announcement-meta" id="announcement-meta" hidden></div>
+    <div class="announcement-body" id="announcement-body"></div>
+    <div class="action-row mt-12">
+      <button class="btn btn-outline" type="button" onclick="closeAnnouncementModal({remindLater:true})">稍后提醒</button>
+      <button class="btn btn-primary" type="button" id="announcement-primary-btn" onclick="handleAnnouncementPrimaryAction()">知道了</button>
     </div>
   </div>
 </div>
