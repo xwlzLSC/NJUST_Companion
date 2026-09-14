@@ -52,6 +52,21 @@ function readSemesterHint(doc) {
   return '';
 }
 
+function expandScheduleWeeks(items) {
+  return items.flatMap(item => {
+    const text = String(item.weekText || '')
+      .replace(/[，、；;]/g, ',')
+      .replace(/[～—–－]/g, '-');
+    const match = text.match(/(\d+\s*(?:[-~]\s*\d+)?(?:\s*,\s*\d+\s*(?:[-~]\s*\d+)?)*)\s*(?:[（(]\s*)?(?:单周|双周|周)/);
+    if (!match) return [item];
+    const ranges = match[1].split(',').map(part => {
+      const bounds = part.trim().split(/\s*[-~]\s*/).map(Number);
+      return { startWeek: bounds[0], endWeek: bounds[1] || bounds[0] };
+    }).filter(range => range.startWeek > 0 && range.endWeek >= range.startWeek);
+    return ranges.length ? ranges.map(range => ({ ...item, ...range })) : [item];
+  });
+}
+
 function parseWeekInfo(text) {
   const source = String(text || '');
   const rangeMatch = source.match(/(\d+)\s*[-~]\s*(\d+)/);
@@ -383,6 +398,7 @@ function mergeModernSchedule(detailItems, gridItems) {
       ...detail,
       teacher: detail.teacher || gridMatch.teacher || '',
       room: detail.room || gridMatch.room || '',
+      weekText: gridMatch.weekText || detail.weekText || '',
       startWeek: gridMatch.startWeek || detail.startWeek,
       endWeek: gridMatch.endWeek || detail.endWeek,
       oddEven: gridMatch.oddEven || detail.oddEven,
@@ -416,6 +432,7 @@ function parseLegacySchedule(doc) {
         lines.slice(1).forEach(line => {
           const weekInfo = parseWeekInfo(line);
           if (weekInfo.startWeek !== 1 || weekInfo.endWeek !== 1 || /周/.test(line)) {
+            course.weekText = /周/.test(line) ? line : (course.weekText || '');
             course.startWeek = weekInfo.startWeek;
             course.endWeek = weekInfo.endWeek;
             course.oddEven = weekInfo.oddEven;
@@ -438,7 +455,7 @@ function parseSchedule(doc) {
     ? parseModernSchedule(doc)
     : parseLegacySchedule(doc);
   const semester = readSemesterHint(doc);
-  return items.map(item => ({
+  return expandScheduleWeeks(items).map(item => ({
     ...item,
     semester: item.semester || semester
   }));

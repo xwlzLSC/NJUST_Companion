@@ -14,12 +14,17 @@
     try {
       const storedTheme = localStorage.getItem('njust-ui-theme') || 'crimson';
       const storedCustomColor = localStorage.getItem('njust-custom-theme-color') || '#6f3fa0';
+      const storedUiStyle = localStorage.getItem('njust-ui-style') || 'editorial';
       document.documentElement.dataset.theme = storedTheme;
+      document.documentElement.dataset.uiStyle = ['editorial', 'aurora', 'minimal', 'brutal', 'compact', 'timeline', 'notebook', 'midnight'].includes(storedUiStyle)
+        ? storedUiStyle
+        : 'editorial';
       if (storedTheme === 'custom' && /^#[0-9a-f]{6}$/i.test(storedCustomColor)) {
         document.documentElement.style.setProperty('--color-primary', storedCustomColor);
       }
     } catch {
       document.documentElement.dataset.theme = 'crimson';
+      document.documentElement.dataset.uiStyle = 'editorial';
     }
   </script>
   <link rel="manifest" href="./manifest.json">
@@ -46,6 +51,25 @@
       <symbol id="i-alert" viewBox="0 0 24 24"><path d="M12 3 2.5 20h19zM12 9v5M12 17h.01"/></symbol>
       <symbol id="i-bell" viewBox="0 0 24 24"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/></symbol>
   <symbol id="i-coffee" viewBox="0 0 24 24"><path d="M4 8h13v6a6 6 0 0 1-6 6H10a6 6 0 0 1-6-6zM17 10h2a2 2 0 0 1 0 4h-2M7 3v2M11 3v2M15 3v2"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></symbol>
+  <symbol id="i-timeline" viewBox="0 0 24 24"><path d="M6 3v18M6 6h12M6 12h9M6 18h12"/><circle cx="6" cy="6" r="2"/><circle cx="6" cy="12" r="2"/><circle cx="6" cy="18" r="2"/></symbol>
+  <symbol id="i-note" viewBox="0 0 24 24"><path d="M5 3h14v18H5zM8 7h8M8 11h8M8 15h5"/><path d="M8 19h8"/></symbol>
+  <symbol id="i-bookmark" viewBox="0 0 24 24"><path d="M6 4a2 2 0 0 1 2-2h8a2 2 0 0 1 2 2v18l-6-4-6 4z"/></symbol>
+  <symbol id="i-spark" viewBox="0 0 24 24"><path d="m12 2 1.7 6.3L20 10l-6.3 1.7L12 18l-1.7-6.3L4 10l6.3-1.7zM19 16l.8 2.2L22 19l-2.2.8L19 22l-.8-2.2L16 19l2.2-.8z"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M20 15.5A8.5 8.5 0 0 1 8.5 4 8 8 0 1 0 20 15.5Z"/></symbol>
+  <symbol id="i-bars" viewBox="0 0 24 24"><path d="M4 19V5M10 19v-8M16 19V8M22 19H2"/></symbol>
+  <symbol id="i-dashboard" viewBox="0 0 24 24"><path d="M4 4h6v7H4zM14 4h6v4h-6zM4 15h6v5H4zM14 12h6v8h-6z"/></symbol>
+  <symbol id="i-week" viewBox="0 0 24 24"><path d="M4 6h16v14H4zM8 3v6M16 3v6M4 10h16M8 14h2M14 14h2M8 17h2M14 17h2"/></symbol>
+  <symbol id="i-trend" viewBox="0 0 24 24"><path d="M3 18 9 12l4 3 7-9M15 6h5v5"/></symbol>
+  <symbol id="i-ticket" viewBox="0 0 24 24"><path d="M4 6h16v4a2 2 0 0 0 0 4v4H4v-4a2 2 0 0 0 0-4zM9 9v6M15 9v6"/></symbol>
+  <symbol id="i-door" viewBox="0 0 24 24"><path d="M5 21h14M7 21V4l10-2v19M10 11h.01"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><path d="M3 12h18M12 3c3 3 4 6 4 9s-1 6-4 9c-3-3-4-6-4-9s1-6 4-9Z"/></symbol>
+  <symbol id="i-list" viewBox="0 0 24 24"><path d="m4 6 1.5 1.5L8 5M11 6h9M4 12l1.5 1.5L8 11M11 12h9M4 18l1.5 1.5L8 17M11 18h9"/></symbol>
+  <symbol id="i-sync" viewBox="0 0 24 24"><path d="M20 7h-5V2M4 17h5v5M18.4 5.6A8 8 0 0 0 5.2 8M5.6 18.4A8 8 0 0 0 18.8 16"/></symbol>
+  <symbol id="i-signal" viewBox="0 0 24 24"><path d="M4 16.5a11 11 0 0 1 16 0M7.5 13a6 6 0 0 1 9 0M11.2 9.5a2 2 0 0 1 1.6 0M12 20h.01"/></symbol>
+  <symbol id="i-sliders" viewBox="0 0 24 24"><path d="M4 6h5M15 6h5M4 12h9M19 12h1M4 18h2M12 18h8"/><circle cx="12" cy="6" r="2"/><circle cx="16" cy="12" r="2"/><circle cx="9" cy="18" r="2"/></symbol>
+  <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M4.2 9.2c2.4-4 7.1-6.4 10.5-4.4s4.2 7.4 1.8 11.4-7.1 6.4-10.5 4.4S1.8 13.2 4.2 9.2Z"/><circle cx="18.2" cy="7" r="1"/></symbol>
+  <symbol id="i-pulse" viewBox="0 0 24 24"><path d="M3 13h4l2-6 4 12 2-6h6"/></symbol>
 </svg>
 <div id="app">
 
@@ -84,43 +108,43 @@
         <small>8 SERVICES</small>
       </div>
       <div class="quick-grid">
-        <button class="quick-card" onclick="navigate('schedule')">
-          <span class="quick-icon"><svg><use href="#i-calendar"></use></svg></span>
+        <button class="quick-card" data-action-key="schedule" onclick="navigate('schedule')">
+          <span class="quick-icon" data-icon-key="schedule"><svg><use href="#i-calendar"></use></svg></span>
           <span class="quick-title">查看课表</span>
           <span class="quick-desc">按周查看课程</span>
         </button>
-        <button class="quick-card" onclick="navigate('grades')">
-          <span class="quick-icon"><svg><use href="#i-chart"></use></svg></span>
+        <button class="quick-card" data-action-key="grades" onclick="navigate('grades')">
+          <span class="quick-icon" data-icon-key="grades"><svg><use href="#i-chart"></use></svg></span>
           <span class="quick-title">成绩统计</span>
           <span class="quick-desc">学期筛选与检索</span>
         </button>
-        <button class="quick-card" onclick="navigate('exams')">
-          <span class="quick-icon"><svg><use href="#i-file"></use></svg></span>
+        <button class="quick-card" data-action-key="exams" onclick="navigate('exams')">
+          <span class="quick-icon" data-icon-key="exams"><svg><use href="#i-file"></use></svg></span>
           <span class="quick-title">考试安排</span>
           <span class="quick-desc">倒计时与考场</span>
         </button>
-        <button class="quick-card" onclick="navigate('classrooms')">
-          <span class="quick-icon"><svg><use href="#i-building"></use></svg></span>
+        <button class="quick-card" data-action-key="classrooms" onclick="navigate('classrooms')">
+          <span class="quick-icon" data-icon-key="classrooms"><svg><use href="#i-building"></use></svg></span>
           <span class="quick-title">空闲教室</span>
           <span class="quick-desc">按楼栋查询空房</span>
         </button>
-        <button class="quick-card" onclick="navigate('sites')">
-          <span class="quick-icon"><svg><use href="#i-link"></use></svg></span>
+        <button class="quick-card" data-action-key="sites" onclick="navigate('sites')">
+          <span class="quick-icon" data-icon-key="sites"><svg><use href="#i-link"></use></svg></span>
           <span class="quick-title">常用网站</span>
           <span class="quick-desc">教务与学习入口</span>
         </button>
-        <button class="quick-card" onclick="navigate('todos')">
-          <span class="quick-icon"><svg><use href="#i-check"></use></svg></span>
+        <button class="quick-card" data-action-key="todos" onclick="navigate('todos')">
+          <span class="quick-icon" data-icon-key="todos"><svg><use href="#i-check"></use></svg></span>
           <span class="quick-title">待办事件</span>
           <span class="quick-desc">自定义提醒事项</span>
         </button>
-        <button class="quick-card" onclick="navigate('settings')">
-          <span class="quick-icon"><svg><use href="#i-cloud"></use></svg></span>
+        <button class="quick-card" data-action-key="settings" onclick="navigate('settings')">
+          <span class="quick-icon" data-icon-key="settings"><svg><use href="#i-cloud"></use></svg></span>
           <span class="quick-title">同步中心</span>
           <span class="quick-desc">登录、备份、设置</span>
         </button>
-        <button class="quick-card" onclick="openCampusAuthShortcut()">
-          <span class="quick-icon"><svg><use href="#i-wifi"></use></svg></span>
+        <button class="quick-card" data-action-key="network" onclick="openCampusAuthShortcut()">
+          <span class="quick-icon" data-icon-key="network"><svg><use href="#i-wifi"></use></svg></span>
           <span class="quick-title">校园网</span>
           <span class="quick-desc">一键认证入口</span>
         </button>
@@ -332,7 +356,41 @@
 
       <div class="section-title">界面配色</div>
       <div class="card appearance-card">
-        <div class="setting-label">主题色</div>
+        <div class="setting-label">界面风格</div>
+        <div class="setting-desc">风格会改变整体排版、卡片、导航、按钮和课表表现；可与下方任意颜色搭配组合。</div>
+        <div class="ui-style-picker mt-12" id="ui-style-picker" role="radiogroup" aria-label="界面风格">
+          <button class="ui-style-option" type="button" data-ui-style="editorial" role="radio" onclick="setUiStyle('editorial')">
+            <span class="ui-style-preview preview-editorial" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>南理刊物</strong><small>纸张排版 · 锐利网格</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="aurora" role="radio" onclick="setUiStyle('aurora')">
+            <span class="ui-style-preview preview-aurora" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>流光玻璃</strong><small>通透悬浮 · 大圆角</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="minimal" role="radio" onclick="setUiStyle('minimal')">
+            <span class="ui-style-preview preview-minimal" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>留白极简</strong><small>平面列表 · 安静克制</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="brutal" role="radio" onclick="setUiStyle('brutal')">
+            <span class="ui-style-preview preview-brutal" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>撞色积木</strong><small>粗边框 · 强烈层级</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="timeline" role="radio" onclick="setUiStyle('timeline')">
+            <span class="ui-style-preview preview-timeline" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>课程时间轴</strong><small>时间线 · 今日聚焦</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="notebook" role="radio" onclick="setUiStyle('notebook')">
+            <span class="ui-style-preview preview-notebook" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>课堂笔记</strong><small>纸张线稿 · 轻量记录</small></span>
+          </button>
+          <button class="ui-style-option" type="button" data-ui-style="midnight" role="radio" onclick="setUiStyle('midnight')">
+            <span class="ui-style-preview preview-midnight" aria-hidden="true"><i></i><i></i><i></i></span>
+            <span><strong>午夜专注</strong><small>深色层次 · 低干扰</small></span>
+          </button>
+        </div>
+
+        <div class="appearance-divider" aria-hidden="true"></div>
+        <div class="setting-label">颜色搭配</div>
         <div class="setting-desc">选择固定搭配，或打开调色盘自定义主色。切换后立即生效并保存在本机；墨黑主题同时切换为深色界面。</div>
         <div class="theme-picker mt-12" id="theme-picker" role="radiogroup" aria-label="主题配色">
           <button class="theme-option" type="button" data-theme="crimson" role="radio" onclick="setColorTheme('crimson')">
@@ -346,6 +404,18 @@
           <button class="theme-option" type="button" data-theme="forest" role="radio" onclick="setColorTheme('forest')">
             <span class="theme-swatch forest"><i></i><i></i><i></i></span>
             <span><strong>松柏绿</strong><small>低饱和</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="sakura" role="radio" onclick="setColorTheme('sakura')">
+            <span class="theme-swatch sakura"><i></i><i></i><i></i></span>
+            <span><strong>樱雾粉</strong><small>柔和醒目</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="amber" role="radio" onclick="setColorTheme('amber')">
+            <span class="theme-swatch amber"><i></i><i></i><i></i></span>
+            <span><strong>琥珀金</strong><small>温暖清晰</small></span>
+          </button>
+          <button class="theme-option" type="button" data-theme="mist" role="radio" onclick="setColorTheme('mist')">
+            <span class="theme-swatch mist"><i></i><i></i><i></i></span>
+            <span><strong>雾霭青</strong><small>安静耐看</small></span>
           </button>
           <button class="theme-option" type="button" data-theme="ink" role="radio" onclick="setColorTheme('ink')">
             <span class="theme-swatch ink"><i></i><i></i><i></i></span>
@@ -430,23 +500,23 @@
 
   <nav class="bottom-nav">
     <button class="nav-item active" data-page="home">
-      <span class="nav-icon"><svg><use href="#i-home"></use></svg></span>
+      <span class="nav-icon" data-nav-icon="home"><svg><use href="#i-home"></use></svg></span>
       <span>首页</span>
     </button>
     <button class="nav-item" data-page="schedule">
-      <span class="nav-icon"><svg><use href="#i-calendar"></use></svg></span>
+      <span class="nav-icon" data-nav-icon="schedule"><svg><use href="#i-calendar"></use></svg></span>
       <span>课表</span>
     </button>
     <button class="nav-item" data-page="grades">
-      <span class="nav-icon"><svg><use href="#i-chart"></use></svg></span>
+      <span class="nav-icon" data-nav-icon="grades"><svg><use href="#i-chart"></use></svg></span>
       <span>成绩</span>
     </button>
     <button class="nav-item" data-page="exams">
-      <span class="nav-icon"><svg><use href="#i-file"></use></svg></span>
+      <span class="nav-icon" data-nav-icon="exams"><svg><use href="#i-file"></use></svg></span>
       <span>考试</span>
     </button>
     <button class="nav-item" data-page="settings">
-      <span class="nav-icon"><svg><use href="#i-settings"></use></svg></span>
+      <span class="nav-icon" data-nav-icon="settings"><svg><use href="#i-settings"></use></svg></span>
       <span>设置</span>
     </button>
   </nav>

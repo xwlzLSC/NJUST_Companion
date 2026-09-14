@@ -120,9 +120,74 @@ const DEFAULT_LOGIN_PREFS = {
   rememberPassword: false
 };
 
-const COLOR_THEMES = ['crimson', 'navy', 'forest', 'ink', 'custom'];
+const COLOR_THEMES = ['crimson', 'navy', 'forest', 'sakura', 'amber', 'mist', 'ink', 'custom'];
 const DEFAULT_COLOR_THEME = 'crimson';
 const DEFAULT_CUSTOM_THEME_COLOR = '#6f3fa0';
+const UI_STYLES = ['editorial', 'aurora', 'minimal', 'brutal', 'compact', 'timeline', 'notebook', 'midnight'];
+const DEFAULT_UI_STYLE = 'editorial';
+const UI_STYLE_LABELS = {
+  editorial: '南理刊物',
+  aurora: '流光玻璃',
+  minimal: '留白极简',
+  brutal: '撞色积木',
+  compact: '高效仪表',
+  timeline: '课程时间轴',
+  notebook: '课堂笔记',
+  midnight: '午夜专注'
+};
+const DEFAULT_QUICK_ORDER = ['schedule', 'grades', 'exams', 'classrooms', 'sites', 'todos', 'settings', 'network'];
+const DEFAULT_NAV_ORDER = ['home', 'schedule', 'grades', 'exams', 'settings'];
+const UI_STYLE_LAYOUTS = Object.fromEntries(
+  UI_STYLES.map(style => [style, { quickOrder: DEFAULT_QUICK_ORDER, navOrder: DEFAULT_NAV_ORDER }])
+);
+const UI_ICON_SETS = {
+  editorial: {
+    quick: { schedule: 'i-calendar', grades: 'i-chart', exams: 'i-file', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-cloud', network: 'i-wifi' },
+    nav: { home: 'i-home', schedule: 'i-calendar', grades: 'i-chart', exams: 'i-file', settings: 'i-settings' }
+  },
+  aurora: {
+    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    nav: { home: 'i-orbit', schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', settings: 'i-sliders' }
+  },
+  minimal: {
+    quick: { schedule: 'i-week', grades: 'i-pulse', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sliders', network: 'i-signal' },
+    nav: { home: 'i-dashboard', schedule: 'i-week', grades: 'i-pulse', exams: 'i-note', settings: 'i-sliders' }
+  },
+  brutal: {
+    quick: { schedule: 'i-grid', grades: 'i-bars', exams: 'i-bookmark', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-sync', network: 'i-wifi' },
+    nav: { home: 'i-grid', schedule: 'i-timeline', grades: 'i-bars', exams: 'i-bookmark', settings: 'i-sliders' }
+  },
+  compact: {
+    quick: { schedule: 'i-week', grades: 'i-bars', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-check', settings: 'i-sync', network: 'i-signal' },
+    nav: { home: 'i-dashboard', schedule: 'i-calendar', grades: 'i-bars', exams: 'i-note', settings: 'i-settings' }
+  },
+  timeline: {
+    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    nav: { home: 'i-dashboard', schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', settings: 'i-sliders' }
+  },
+  notebook: {
+    quick: { schedule: 'i-bookmark', grades: 'i-bars', exams: 'i-note', classrooms: 'i-building', sites: 'i-globe', todos: 'i-check', settings: 'i-cloud', network: 'i-wifi' },
+    nav: { home: 'i-note', schedule: 'i-bookmark', grades: 'i-bars', exams: 'i-file', settings: 'i-sliders' }
+  },
+  midnight: {
+    quick: { schedule: 'i-orbit', grades: 'i-pulse', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    nav: { home: 'i-moon', schedule: 'i-orbit', grades: 'i-pulse', exams: 'i-ticket', settings: 'i-sliders' }
+  }
+};
+const COLOR_THEME_LABELS = {
+  crimson: '南理紫',
+  navy: '深海蓝',
+  forest: '松柏绿',
+  sakura: '樱雾粉',
+  amber: '琥珀金',
+  mist: '雾霭青',
+  ink: '墨黑',
+  custom: '自定义配色'
+};
+const THEME_STATUS_COLORS = {
+  crimson: '#512888', navy: '#173d64', forest: '#28594b', sakura: '#a63f68',
+  amber: '#875516', mist: '#216d75', ink: '#121212'
+};
 const CUSTOM_THEME_PROPERTIES = [
   '--color-primary',
   '--color-primary-deep',
@@ -207,6 +272,7 @@ const state = {
   loginPrefs: { ...DEFAULT_LOGIN_PREFS },
   colorTheme: DEFAULT_COLOR_THEME,
   customThemeColor: DEFAULT_CUSTOM_THEME_COLOR,
+  uiStyle: DEFAULT_UI_STYLE,
   notificationSettings: { ...DEFAULT_NOTIFICATION_SETTINGS },
   appUpdate: { ...DEFAULT_APP_UPDATE_STATE },
   gradeSelections: {},
@@ -256,6 +322,64 @@ window.addEventListener('njust-native-status', event => {
 
 function normalizeColorTheme(value) {
   return COLOR_THEMES.includes(String(value)) ? String(value) : DEFAULT_COLOR_THEME;
+}
+
+function normalizeUiStyle(value) {
+  return UI_STYLES.includes(String(value)) ? String(value) : DEFAULT_UI_STYLE;
+}
+
+function setMappedIcon(container, iconId) {
+  const use = container?.querySelector('use');
+  if (!use || !iconId) return;
+  use.setAttribute('href', `#${iconId}`);
+}
+
+function reorderUiItems(container, selector, attribute, order) {
+  if (!container || !Array.isArray(order)) return;
+  const items = new Map(
+    Array.from(container.querySelectorAll(selector)).map(item => [item.dataset[attribute], item])
+  );
+  order.forEach(key => {
+    const item = items.get(key);
+    if (item) container.appendChild(item);
+  });
+}
+
+function applyUiStylePresentation(style) {
+  const iconSet = UI_ICON_SETS[style] || UI_ICON_SETS[DEFAULT_UI_STYLE];
+  const layout = UI_STYLE_LAYOUTS[style] || UI_STYLE_LAYOUTS[DEFAULT_UI_STYLE];
+
+  document.querySelectorAll('[data-icon-key]').forEach(container => {
+    setMappedIcon(container, iconSet.quick[container.dataset.iconKey]);
+  });
+  document.querySelectorAll('[data-nav-icon]').forEach(container => {
+    setMappedIcon(container, iconSet.nav[container.dataset.navIcon]);
+  });
+
+  reorderUiItems(document.querySelector('.quick-grid'), '.quick-card', 'actionKey', layout.quickOrder);
+  reorderUiItems(document.querySelector('.bottom-nav'), '.nav-item', 'page', layout.navOrder);
+}
+
+function applyUiStyle(value) {
+  const style = normalizeUiStyle(value);
+  state.uiStyle = style;
+  document.documentElement.dataset.uiStyle = style;
+  try {
+    window.localStorage.setItem('njust-ui-style', style);
+  } catch {}
+  applyUiStylePresentation(style);
+  document.querySelectorAll('.ui-style-option').forEach(option => {
+    const active = option.dataset.uiStyle === style;
+    option.classList.toggle('active', active);
+    option.setAttribute('aria-checked', String(active));
+  });
+  return style;
+}
+
+async function setUiStyle(value) {
+  const style = applyUiStyle(value);
+  if (db) await dbSet('uiStyle', style);
+  showToast(`界面已切换为${UI_STYLE_LABELS[style]}`);
 }
 
 function normalizeCustomThemeColor(value) {
@@ -405,7 +529,7 @@ function applyColorTheme(value) {
   } catch {}
   document.querySelector('meta[name="theme-color"]')?.setAttribute(
     'content',
-    ({ crimson: '#512888', navy: '#173d64', forest: '#28594b', ink: '#121212', custom: state.customThemeColor })[theme]
+    theme === 'custom' ? state.customThemeColor : (THEME_STATUS_COLORS[theme] || THEME_STATUS_COLORS.crimson)
   );
   document.querySelectorAll('.theme-option').forEach(option => {
     const active = option.dataset.theme === theme;
@@ -424,7 +548,7 @@ async function setColorTheme(value) {
     if (editor) editor.hidden = true;
     customOption?.setAttribute('aria-expanded', 'false');
   }
-  showToast(`已切换为${({ crimson: '南理紫', navy: '深海蓝', forest: '松柏绿', ink: '墨黑', custom: '自定义配色' })[theme]}`);
+  showToast(`已切换为${COLOR_THEME_LABELS[theme]}`);
 }
 
 function previewCustomThemeColor(value) {
@@ -5809,6 +5933,8 @@ async function init() {
   const cached = await dbGet('main');
   state.customThemeColor = normalizeCustomThemeColor((await dbGet('customThemeColor')) || window.localStorage.getItem('njust-custom-theme-color'));
   state.colorTheme = normalizeColorTheme((await dbGet('colorTheme')) || window.localStorage.getItem('njust-ui-theme'));
+  state.uiStyle = normalizeUiStyle((await dbGet('uiStyle')) || window.localStorage.getItem('njust-ui-style'));
+  applyUiStyle(state.uiStyle);
   applyColorTheme(state.colorTheme);
   state.gradeSelections = (await dbGet('gradeSelections')) || {};
   state.customCourses = normalizeStoredCustomCourses(await dbGet('customCourses'));

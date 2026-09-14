@@ -903,9 +903,25 @@ fn parse_schedule_cell(html: &str, weekday: u32, periods: &[u32]) -> Vec<Value> 
         let (start_week, end_week, odd_even) = week_info(&week_text);
         Some(json!({
             "id": "", "name": name, "teacher": field("老师").unwrap_or_default(), "room": field("教室").unwrap_or_default(),
-            "weekday": weekday, "periods": periods, "startWeek": start_week, "endWeek": end_week, "oddEven": odd_even,
+            "weekday": weekday, "periods": periods, "startWeek": start_week, "endWeek": end_week, "oddEven": odd_even, "weekText": week_text,
             "credit": 0, "code": "", "sequence": "", "attribute": "", "stage": "", "groupName": field("分组").unwrap_or_default()
         }))
+    }).flat_map(|course| {
+        let text = course["weekText"].as_str().unwrap_or_default()
+            .replace(['，', '、', '；', ';'], ",").replace(['～', '—', '–', '－'], "-");
+        let expression = Regex::new(r"(\d+\s*(?:[-~]\s*\d+)?(?:\s*,\s*\d+\s*(?:[-~]\s*\d+)?)*)\s*(?:[（(]\s*)?(?:单周|双周|周)").unwrap();
+        let Some(captures) = expression.captures(&text) else { return vec![course]; };
+        let ranges = captures[1].split(',').filter_map(|part| {
+            let bounds = part.split(['-', '~']).map(|v| v.trim().parse::<u32>().ok()).collect::<Option<Vec<_>>>()?;
+            let start = *bounds.first()?;
+            let end = *bounds.get(1).unwrap_or(&start);
+            if start == 0 || end < start { return None; }
+            let mut item = course.clone();
+            item["startWeek"] = json!(start);
+            item["endWeek"] = json!(end);
+            Some(item)
+        }).collect::<Vec<_>>();
+        if ranges.is_empty() { vec![course] } else { ranges }
     }).collect()
 }
 
@@ -967,7 +983,7 @@ mod tests {
 
     #[test]
     fn parses_the_real_schedule_grid_fixture() {
-        let html = std::fs::read_to_string("../storage/sample-schedule-utf8.html").expect("schedule fixture");
+        let html = r#"<table id="kbtable"><tr><th>周次</th></tr><tr><th>第一大节</th><td><div class="kbcontent">通信系统<br><font title="周次">8-16(周)</font></div></td></tr></table>"#;
         let courses = parse_schedule(&html);
         assert!(!courses.is_empty(), "the modern #kbtable fixture must yield courses");
         let communication = courses.iter().find(|course| course.get("name").and_then(Value::as_str) == Some("通信系统")).expect("通信系统");
@@ -986,5 +1002,17 @@ mod tests {
     fn only_the_selected_semester_and_following_options_are_queried() {
         let html = r#"<select id='kksj'><option value='old'>旧</option><option value='now' selected>当前</option><option value='new'>新</option></select>"#;
         assert_eq!(option_values(html, "#kksj"), vec!["now", "new"]);
+    }
+
+    #[test]
+    fn schedule_preserves_discontinuous_weeks() {
+        let html = r#"科技论文写作<br><font title="周次">4-5,8-12(周)</font><br><font title="教室">IV-C105</font>"#;
+        let courses = parse_schedule_cell(html, 1, &[4, 5]);
+        assert_eq!(courses.len(), 2);
+        assert_eq!(courses[0]["startWeek"], 4);
+        assert_eq!(courses[0]["endWeek"], 5);
+        assert_eq!(courses[1]["startWeek"], 8);
+        assert_eq!(courses[1]["endWeek"], 12);
+        assert_eq!(courses[1]["room"], "IV-C105");
     }
 }
