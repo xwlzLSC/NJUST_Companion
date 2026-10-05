@@ -20,6 +20,11 @@ import javax.crypto.KeyGenerator;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.GCMParameterSpec;
 
+/**
+ * “记住密码”的原生边界。密钥保存在 Android Keystore，密码经 AES-GCM 加密后存储。
+ * 每次加密使用 Cipher 生成的新 IV，读取时密文与 IV 必须配套。
+ * 不得把该存储改成明文 SharedPreferences/localStorage，也不得将解密结果写日志。
+ */
 @CapacitorPlugin(name = "SecureCredentials")
 public class SecureCredentialsPlugin extends Plugin {
     private static final String KEYSTORE = "AndroidKeyStore";
@@ -30,6 +35,7 @@ public class SecureCredentialsPlugin extends Plugin {
     private static final String IV = "iv";
 
     @PluginMethod
+    /** 同步提交持久化结果，只有真正保存成功才向网页返回 saved=true。 */
     public void save(PluginCall call) {
         String username = call.getString("username", "").trim();
         String password = call.getString("password", "");
@@ -41,11 +47,12 @@ public class SecureCredentialsPlugin extends Plugin {
             Cipher cipher = Cipher.getInstance("AES/GCM/NoPadding");
             cipher.init(Cipher.ENCRYPT_MODE, getOrCreateKey());
             byte[] encrypted = cipher.doFinal(password.getBytes(StandardCharsets.UTF_8));
-            getPrefs().edit()
+            boolean saved = getPrefs().edit()
                 .putString(USERNAME, username)
                 .putString(PASSWORD, Base64.encodeToString(encrypted, Base64.NO_WRAP))
                 .putString(IV, Base64.encodeToString(cipher.getIV(), Base64.NO_WRAP))
-                .apply();
+                .commit();
+            if (!saved) throw new IllegalStateException("Credentials not saved");
             JSObject result = new JSObject();
             result.put("saved", true);
             call.resolve(result);
@@ -55,6 +62,7 @@ public class SecureCredentialsPlugin extends Plugin {
     }
 
     @PluginMethod
+    /** 未保存过凭据返回空值；损坏/无法解密时交给调用方提示，而非编造密码。 */
     public void load(PluginCall call) {
         SharedPreferences prefs = getPrefs();
         String username = prefs.getString(USERNAME, "");
@@ -88,7 +96,10 @@ public class SecureCredentialsPlugin extends Plugin {
 
     @PluginMethod
     public void clear(PluginCall call) {
-        getPrefs().edit().clear().apply();
+        if (!getPrefs().edit().clear().commit()) {
+            call.reject("安全清除登录凭据失败，请重试");
+            return;
+        }
         JSObject result = new JSObject();
         result.put("cleared", true);
         call.resolve(result);

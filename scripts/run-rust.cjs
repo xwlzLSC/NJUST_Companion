@@ -1,3 +1,7 @@
+/** @maintenance
+ * npm start 的 Rust 启动包装器：定位 Cargo、配置本机工具链目录，并将附加参数透传给 Cargo。
+ * 项目目录中的 .rustup 是现用工具链，不是可随手删除的旧输出；除非确认系统工具链可替代，否则保持不动。
+ */
 const { spawn } = require('node:child_process');
 const { existsSync } = require('node:fs');
 const { join } = require('node:path');

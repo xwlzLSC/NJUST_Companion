@@ -1,3 +1,7 @@
+/**
+ * APK 版本查询、下载和系统安装适配层。正式覆盖更新要求相同 applicationId 和签名。
+ * 安装交给 Android 系统确认，不能通过卸载旧版来“修复”签名冲突，否则会丢失本机数据。
+ */
 package com.njust.companion;
 
 import android.app.DownloadManager;

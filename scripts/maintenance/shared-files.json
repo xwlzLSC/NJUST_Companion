@@ -1,0 +1,16 @@
+{
+  "groups": [
+    { "source": "js/campus-core.js", "copies": ["miniprogram/utils/campus-core.js", "cloudfunctions/njustSync2/lib/campus-core.js"] },
+    { "source": "js/campus-config.js", "copies": ["miniprogram/utils/campus-config.js", "cloudfunctions/njustSync2/lib/campus-config.js"] },
+    { "source": "js/library-core.js", "copies": ["miniprogram/utils/library-core.js", "cloudfunctions/njustLibrary/library-core.js"] },
+    { "source": "js/schedule-insights.js", "copies": ["miniprogram/utils/schedule-insights.js"] },
+    { "source": "js/captcha-ddddocr.js", "copies": ["cloudfunctions/njustSync2/lib/captcha-ddddocr.js"] },
+    { "source": "integrations/wechat/cloud/wechat-login.js", "copies": ["cloudfunctions/njustSync2/lib/wechat-login.js"] },
+    { "source": "integrations/wechat/cloud/study-reminders.js", "copies": ["cloudfunctions/njustSync2/lib/study-reminders.js"] },
+    { "source": "integrations/wechat/cloud/reminder-runner.js", "copies": ["cloudfunctions/todoReminderTimer/lib/reminder-runner.js"] }
+  ],
+  "intentionalVariants": [
+    { "files": ["js/parser.js", "cloudfunctions/njustSync2/lib/parser.js"], "reason": "网页用 DOM，云端用 Cheerio；维护相同业务字段，不应整文件覆盖。" },
+    { "files": ["js/captcha-ddddocr.js", "cloudfunctions/njustCaptchaOcr/lib/captcha-ddddocr.js"], "reason": "独立云函数包含自己的推理适配差异；分别验证，不强制同步。" }
+  ]
+}

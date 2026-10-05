@@ -1,16 +1,18 @@
 const assert = require('node:assert/strict');
+const fs = require('node:fs');
+const projectPaths = require('./fixtures/project-paths.cjs');
 const { JSDOM } = require('jsdom');
 const parser = require('../js/parser');
-const miniRoot = process.env.NJUST_MINI_ROOT;
+const miniRoot = projectPaths.mini('');
+const hasMini = fs.existsSync(projectPaths.mini('miniprogram/app.json'));
 const parsers = [
   ['app', html => parser.parseSchedule(new JSDOM(html).window.document)]
 ];
-if (miniRoot) {
+// 当前云端只使用 njustSync2。缺少小程序时仍执行 APK 的分段周次用例。
+if (hasMini) {
   const path = require('node:path');
-  const legacy = require(path.join(miniRoot, 'cloudfunctions/njustSync/lib/parser'));
   const modern = require(path.join(miniRoot, 'cloudfunctions/njustSync2/lib/parser'));
   const cheerio = require(path.join(miniRoot, 'cloudfunctions/njustSync2/node_modules/cheerio'));
-  parsers.push(['mini legacy', html => legacy.parseSchedule(new JSDOM(html).window.document)]);
   parsers.push(['mini current', html => modern.parseSchedule(cheerio.load(html))]);
 }
 function fixture(weeks) {

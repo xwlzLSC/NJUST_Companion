@@ -1,12 +1,22 @@
-const CACHE_NAME = 'njust-kb-v24';
+const CACHE_NAME = 'njust-kb-v37-campus-back';
 const STATIC_ASSETS = [
   './',
   './index.html',
   './css/app.css',
+  './css/campus.css',
   './js/capacitor.js',
   './js/app.js',
+  './js/campus-config.js',
+  './js/campus-core.js',
+  './js/campus.js',
   './js/features.js',
+  './js/library-core.js',
+  './js/library.js',
+  './js/schedule-insights.js',
+  './js/study-features.js',
   './js/native-sync.js',
+  './js/captcha-ocr.js',
+  './js/captcha-ddddocr.js',
   './js/parser.js',
   './manifest.json',
   './announcement.json',
@@ -35,13 +45,25 @@ self.addEventListener('fetch', event => {
 
   const requestUrl = new URL(event.request.url);
   const isSameOrigin = requestUrl.origin === self.location.origin;
+  // Session state and captcha images must never be served from offline cache.
+  if (isSameOrigin && requestUrl.pathname.startsWith('/api/')) return;
   const isAppShellAsset = isSameOrigin && (
     requestUrl.pathname.endsWith('/')
     || requestUrl.pathname.endsWith('/index.html')
     || requestUrl.pathname.endsWith('/css/app.css')
+    || requestUrl.pathname.endsWith('/css/campus.css')
+    || requestUrl.pathname.endsWith('/js/campus-config.js')
+    || requestUrl.pathname.endsWith('/js/campus-core.js')
+    || requestUrl.pathname.endsWith('/js/campus.js')
     || requestUrl.pathname.endsWith('/js/app.js')
     || requestUrl.pathname.endsWith('/js/features.js')
+    || requestUrl.pathname.endsWith('/js/library-core.js')
+    || requestUrl.pathname.endsWith('/js/library.js')
+    || requestUrl.pathname.endsWith('/js/schedule-insights.js')
+    || requestUrl.pathname.endsWith('/js/study-features.js')
     || requestUrl.pathname.endsWith('/js/native-sync.js')
+    || requestUrl.pathname.endsWith('/js/captcha-ocr.js')
+    || requestUrl.pathname.endsWith('/js/captcha-ddddocr.js')
     || requestUrl.pathname.endsWith('/js/parser.js')
     || requestUrl.pathname.endsWith('/manifest.json')
     || requestUrl.pathname.endsWith('/announcement.json')

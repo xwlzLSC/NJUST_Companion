@@ -1,20 +1,31 @@
 {
   "name": "njust-companion",
-  "version": "2.1.0",
+  "version": "2.1.7",
   "private": true,
   "description": "南京理工大学教务助手，本地代理登录与自动同步版",
   "main": "rust-server/src/main.rs",
   "scripts": {
+    "test": "node scripts/maintenance/test-projects.cjs",
+    "test:all": "node scripts/maintenance/test-projects.cjs --all",
+    "check:projects": "node scripts/maintenance/check-projects.cjs",
     "start": "node scripts/run-rust.cjs",
     "start:prod": "node scripts/run-rust.cjs",
     "start:rust": "node scripts/run-rust.cjs",
     "start:node-legacy": "node server.js",
-    "check": "node --check js/app.js && node --check js/features.js && node --check js/parser.js && node --check js/native-sync.js && node scripts/run-rust.cjs check --manifest-path rust-server/Cargo.toml",
+    "check": "node --check js/app.js && node --check js/features.js && node --check js/schedule-insights.js && node --check js/study-features.js && node --check js/parser.js && node --check js/native-sync.js && node --check js/captcha-ocr.js && node --check js/captcha-ddddocr.js && node scripts/run-rust.cjs check --manifest-path rust-server/Cargo.toml",
+    "test:study": "node --test scripts/test-study-features.cjs scripts/test-exam-reminders.cjs",
+    "test:mini-wechat": "node --test scripts/test-mini-wechat-login.cjs",
+    "test:library": "node --test scripts/test-library.cjs",
+    "test:campus": "node --test scripts/test-campus.cjs",
+    "test:apk-login": "node --test scripts/test-wechat-cas-login.cjs scripts/test-native-stability.cjs scripts/test-native-session-recovery.cjs scripts/test-apk-wechat-ui.cjs scripts/test-academic-cas-login.cjs",
     "build:android:web": "node scripts/prepare-capacitor-web.cjs",
     "android:add": "npm run build:android:web && npx cap add android",
     "android:sync": "npm run build:android:web && npx cap sync android",
     "apk:debug": "node scripts/build-android-debug.cjs",
     "apk:release": "node scripts/build-android-release.cjs"
+  },
+  "devDependencies": {
+    "jsqr": "1.4.0"
   },
   "dependencies": {
     "@capacitor/android": "^8.3.0",
@@ -29,6 +40,7 @@
     "express": "^5.1.0",
     "jimp": "^1.6.1",
     "jsdom": "^26.1.0",
+    "onnxruntime-web": "1.22.0",
     "tesseract.js": "^7.0.0",
     "tough-cookie": "^5.1.2"
   }

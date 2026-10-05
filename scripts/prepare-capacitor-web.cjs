@@ -1,3 +1,8 @@
+/** @maintenance
+ * Android 网页资源的唯一生成入口。mobile-web 是可再生目录，源码仍在根目录 index.html、js、css 等。
+ * 生成时复制 OCR 模型、WASM 运行时和字体；不要手改 mobile-web 或 android/assets/public，否则下次同步会覆盖。
+ * OUTPUT_DIR 必须是工程内固定子目录，不能改为仓库根目录；脚本开始会递归重建该生成目录。
+ */
 const fs = require('node:fs/promises');
 const path = require('node:path');
 
@@ -24,6 +29,10 @@ async function main() {
   await copyDir('css');
   await copyDir('icons');
   await copyDir('js');
+  await copyDir('models');
+  for (const name of ['ort.wasm.min.js', 'ort-wasm-simd-threaded.mjs', 'ort-wasm-simd-threaded.wasm']) {
+    await copyFile('node_modules/onnxruntime-web/dist/' + name, 'vendor/onnxruntime/' + name);
+  }
   await copyFile('index.html');
   await copyFile('manifest.json');
   await copyFile('announcement.json');

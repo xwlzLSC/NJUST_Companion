@@ -1,0 +1,51 @@
+/* 校历/学业审查的专属样式；颜色和圆角继承 app.css 变量，保持所有主题可读。
+ * 返回按钮与模块切换共享顶部一行；flex 子项 min-width:0 是防止手机窄屏溢出的关键。
+ * 学校长文本允许换行，学分值不压缩；原图滚动只发生在预览容器内。 */
+.campus-home-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.campus-home-link { display: flex; gap: 10px; align-items: center; min-width: 0; padding: 14px 10px; background: var(--color-surface-muted); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font: inherit; font-size: 13px; text-align: left; cursor: pointer; }
+.campus-home-link span { flex-shrink: 0; color: var(--color-primary); font-weight: 700; }
+.campus-tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 16px; }
+.campus-tabs .btn { flex: 1 1 110px; min-width: 0; white-space: normal; }
+.campus-tabs [aria-selected="true"] { background: var(--color-primary); color: #fff; }
+.campus-navigation { display: flex; gap: 8px; align-items: stretch; margin-bottom: 16px; }
+.campus-navigation > .btn { flex: none; min-height: 44px; padding: 10px 12px; }
+.campus-navigation .campus-tabs { flex: 1; min-width: 0; margin-bottom: 0; }
+.campus-navigation .campus-tabs .btn { flex: 1; min-height: 44px; padding: 10px 6px; }
+.campus-stats { display: flex; flex-wrap: wrap; gap: 12px; }
+.campus-stat { flex: 1 1 100px; min-width: 0; display: flex; flex-direction: column; gap: 6px; padding: 8px 0; }
+.campus-stat strong { font-size: 24px; line-height: 1.4; overflow-wrap: anywhere; color: var(--color-primary); }
+.campus-stat span { font-size: 13px; font-weight: 600; }
+.campus-stat small, .campus-note { font-size: 12px; line-height: 1.8; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.campus-progress { background: var(--color-surface-muted); border: 1px solid var(--color-border); border-radius: 10px; overflow: hidden; height: 9px; margin: 12px 0; }
+.campus-progress span { display: block; height: 100%; background: var(--color-primary); }
+.campus-row { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 12px; align-items: center; min-width: 0; }
+.campus-row > div { min-width: 0; flex: 1 1 140px; }
+.campus-row > strong { min-width: 0; overflow-wrap: anywhere; }
+.campus-row > span { font-size: 12px; }
+.campus-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+.campus-editor summary { cursor: pointer; font-weight: 600; line-height: 1.7; }
+.campus-form { display: flex; flex-direction: column; gap: 12px; padding-top: 16px; }
+.campus-field { display: flex; flex-direction: column; gap: 6px; font-size: 13px; color: var(--color-text-secondary); min-width: 0; }
+.campus-field input, .campus-field select, .campus-field textarea { width: 100%; min-width: 0; box-sizing: border-box; padding: 12px; background: var(--color-surface-muted); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-sm); font: inherit; }
+.campus-field textarea { resize: vertical; }
+.campus-entry { border-left: 3px solid var(--color-primary); }
+.campus-entry.danger { border-left-color: var(--color-danger); }
+.campus-entry.warning { border-left-color: var(--color-warning); }
+.campus-entry.muted { opacity: .75; }
+.campus-warning { color: var(--color-warning); font-size: 13px; line-height: 1.8; }
+body[data-ui-style="brutal"] .campus-home-link { border-width: 2px; }
+@media(max-width:360px) { .campus-home-link { font-size: 12px; padding: 12px 6px; gap: 6px; } .campus-row .btn { flex: 1 1 100px; } }
+.campus-calendar-preview { display: block; width: 100%; margin: 12px 0; padding: 0; background: var(--color-surface-muted); border: 1px solid var(--color-border); cursor: zoom-in; }
+.campus-calendar-preview img { display: block; width: 100%; height: auto; }
+.campus-calendar-preview img[hidden] { display: none; }
+.campus-calendar-dialog { background: var(--color-surface); color: var(--color-text); border: 1px solid var(--color-border); border-radius: var(--radius-md); padding: 16px; width: calc(100vw - 32px); max-width: 1100px; max-height: 90vh; box-sizing: border-box; }
+.campus-calendar-dialog::backdrop { background: rgba(0,0,0,.65); }
+.campus-calendar-close { position: sticky; top: 0; z-index: 1; margin-bottom: 12px; }
+.campus-calendar-scroll { width: 100%; max-height: 70vh; overflow: auto; }
+.campus-calendar-scroll img { display: block; width: 2400px; max-width: none; }
+.campus-metrics { margin-top: 12px; }
+.campus-metric { display: flex; justify-content: space-between; gap: 16px; align-items: flex-start; padding: 14px 0; border-bottom: 1px solid var(--color-border); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }
+.campus-metric > :first-child { flex: 1; min-width: 0; }
+.campus-metric > :last-child { flex-shrink: 0; max-width: 45%; }
+.campus-metric small { display: block; }
+.campus-error { color: var(--color-danger); font-size: 13px; line-height: 1.8; overflow-wrap: anywhere; }

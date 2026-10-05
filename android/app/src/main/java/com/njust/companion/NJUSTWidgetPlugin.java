@@ -13,6 +13,10 @@ import com.getcapacitor.PluginCall;
 import com.getcapacitor.PluginMethod;
 import com.getcapacitor.annotation.CapacitorPlugin;
 
+/**
+ * 桌面组件适配入口：网页提交离线展示快照，持久化后通知各 WidgetProvider 重绘。
+ * 组件快照不是登录凭据存储；修改 payload 格式需同步 WidgetDataStore/Renderer。
+ */
 @CapacitorPlugin(name = "NJUSTWidget")
 public class NJUSTWidgetPlugin extends Plugin {
     @PluginMethod

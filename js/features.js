@@ -1,3 +1,7 @@
+/** @maintenance
+ * 网页/APK 的课表增强层：课程编辑、分享、日历导出和成绩预测等交互。
+ * 依赖 app.js 中的公共状态与计算函数。导出和展示应复用取课入口，避免不同模块对周次/覆盖规则作出不同解释。
+ */
 /**
  * features.js
  * 七大人性化功能扩展模块
@@ -104,17 +108,17 @@ function generateICSContent() {
     'END:VTIMEZONE'
   ];
 
-  const courses = getAllScheduleCourses();
-  courses.forEach(course => {
-    for (let week = course.startWeek; week <= course.endWeek; week++) {
-      if (course.oddEven === '单' && week % 2 === 0) continue;
-      if (course.oddEven === '双' && week % 2 !== 0) continue;
-
-      const dayOffset = (week - 1) * 7 + (course.weekday - 1);
-      const courseDate = new Date(startDate.getTime() + dayOffset * 86400000);
+  const maxWeek = Math.min(53, getMaxWeek());
+  // Export the same effective courses as the timetable (no campus overrides).
+  for (let dayOffset = 0; dayOffset < maxWeek * 7; dayOffset++) {
+    const week = Math.floor(dayOffset / 7) + 1;
+    const weekday = dayOffset % 7 + 1;
+    const courseDate = new Date(startDate);
+    courseDate.setDate(courseDate.getDate() + dayOffset);
+    getCoursesForDay(weekday, week).forEach(course => {
 
       const range = getPeriodRange(course.periods);
-      if (!range.start || !range.end) continue;
+      if (!range.start || !range.end) return;
 
       const [startH, startM] = range.start.split(':').map(Number);
       const [endH, endM] = range.end.split(':').map(Number);
@@ -124,7 +128,7 @@ function generateICSContent() {
       const dtEnd = new Date(courseDate);
       dtEnd.setHours(endH, endM, 0, 0);
 
-      const uid = `course-${hashString(course.id || course.name)}-w${week}-d${course.weekday}@njust-companion`;
+      const uid = `course-${hashString((course.id || course.name) + '-' + course.periods.join(','))}-w${week}-d${weekday}@njust-companion`;
 
       lines.push(
         'BEGIN:VEVENT',
@@ -137,8 +141,8 @@ function generateICSContent() {
         `CATEGORIES:课程`,
         'END:VEVENT'
       );
-    }
-  });
+    });
+  }
 
   lines.push('END:VCALENDAR');
   return lines.join('\r\n');

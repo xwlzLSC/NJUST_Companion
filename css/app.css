@@ -1,3 +1,6 @@
+/* 维护入口：这里定义通用设计变量，主题由属性选择器覆盖；组件应复用变量，别写死颜色。
+ * 顶部占位、底部安全区和导航高度需要一起维护；固定定位只改其中一处容易遮挡内容。
+ * 校园助手专属样式在 campus.css；图书/提醒等其余模块样式在本文件的对应分段。 */
 :root {
   --color-primary: #a52b40;
   --color-primary-deep: #791d2f;
@@ -22,6 +25,68 @@
   --header-height: 64px;
   --transition: 180ms ease;
 }
+
+.study-summary { margin: 12px 0; }
+.study-summary-link { width: 100%; padding: 12px; text-align: left; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface); color: var(--color-primary); font: inherit; font-size: 13px; cursor: pointer; }
+.study-card-head { display: flex; gap: 12px; justify-content: space-between; align-items: center; flex-wrap: wrap; }
+.study-card-head > strong { min-width: 0; overflow-wrap: anywhere; }
+.study-issue { margin-top: 12px; padding: 12px; border-left: 3px solid var(--color-warning); background: var(--color-surface-muted); color: var(--color-text-secondary); font-size: 13px; line-height: 1.7; overflow-wrap: anywhere; }
+.study-issue.error { border-color: var(--color-danger); }
+.study-change { padding: 12px 0; border-top: 1px solid var(--color-border); margin-top: 12px; line-height: 1.8; overflow-wrap: anywhere; font-size: 13px; }
+.study-status { color: var(--color-primary); font-size: 12px; }
+
+/* Public library catalogue: inherits every theme instead of fixed white text. */
+.library-search-form[hidden] { display: none !important; }
+.library-search-label { display: block; font-weight: 600; margin-bottom: 10px; font-size: 14px; }
+.library-search-row { display: flex; gap: 8px; min-width: 0; }
+.library-search-row input { flex: 1; min-width: 0; }
+.library-search-row .btn { flex-shrink: 0; }
+.library-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; margin-top: 12px; }
+.library-filters label { display: grid; gap: 6px; font-size: 12px; color: var(--color-text-secondary); min-width: 0; }
+.library-filters select { width: 100%; min-width: 0; font: inherit; color: var(--color-text); }
+.library-available-filter { display: flex; align-items: center; gap: 8px; margin: 12px 0; font-size: 13px; }
+.library-available-filter input { accent-color: var(--color-primary); width: 16px; height: 16px; }
+.library-footnote { font-size: 12px; line-height: 1.7; color: var(--color-text-muted); margin: 10px 0; overflow-wrap: anywhere; }
+.library-notice { font-size: 14px; line-height: 1.8; color: var(--color-text-secondary); }
+.library-notice.error { border-left: 3px solid var(--color-danger); color: var(--color-danger); }
+.library-book { display: flex; gap: 14px; width: 100%; min-width: 0; text-align: left; color: var(--color-text); font: inherit; cursor: pointer; margin-bottom: 12px; }
+.library-book:disabled { opacity: .6; cursor: wait; }
+.library-book-mark { display: flex; align-items: center; justify-content: center; width: 48px; height: 64px; flex-shrink: 0; background: var(--color-primary-soft); color: var(--color-primary); border: 1px solid var(--color-border); border-radius: var(--radius-sm); }
+.library-book-mark svg { width: 24px; height: 24px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linejoin: round; }
+.library-book-body { display: grid; gap: 5px; flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.library-book-type { display: block; font-size: 11px; color: var(--color-primary); }
+.library-book-title { font-size: 16px; line-height: 1.55; color: var(--color-text); }
+.library-book-meta { font-size: 12px; line-height: 1.65; color: var(--color-text-secondary); }
+.library-callno { font-size: 12px; line-height: 1.7; color: var(--color-primary); }
+.library-book-bottom { display: flex; justify-content: space-between; align-items: center; gap: 8px; flex-wrap: wrap; margin-top: 5px; font-size: 12px; }
+.library-badge { flex-shrink: 0; padding: 4px 8px; border-radius: var(--radius-sm); background: var(--color-surface-muted); color: var(--color-text-secondary); font-size: 11px; line-height: 1.5; }
+.library-badge.available { color: var(--color-success); border: 1px solid currentColor; }
+.library-result-count { font-size: 13px; color: var(--color-text-secondary); margin: 12px 0; }
+.library-pagination { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; margin: 16px 0; }
+.library-pagination .btn:disabled { opacity: .45; }
+.library-back, .library-retry { margin-bottom: 12px; }
+.library-detail-head h2 { margin: 8px 0; font-size: 20px; line-height: 1.5; overflow-wrap: anywhere; }
+.library-detail-head p, .library-holding p { margin: 6px 0; font-size: 13px; line-height: 1.7; color: var(--color-text-secondary); overflow-wrap: anywhere; }
+.library-detail-head strong { font-size: 13px; line-height: 1.8; color: var(--color-primary); }
+.library-metadata dl { display: grid; grid-template-columns: 65px minmax(0, 1fr); gap: 8px 12px; font-size: 13px; line-height: 1.7; margin: 0; }
+.library-metadata dt { color: var(--color-text-muted); }
+.library-metadata dd { margin: 0; overflow-wrap: anywhere; }
+.library-summary { font-size: 13px; line-height: 1.9; margin: 14px 0 0; color: var(--color-text-secondary); }
+.library-holding-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; }
+.library-holding-head strong { min-width: 0; font-size: 14px; line-height: 1.7; overflow-wrap: anywhere; }
+#page-library .section-title { flex-wrap: wrap; gap: 6px; }
+#page-library .section-title small { font: 12px/1.7 sans-serif; color: var(--color-text-secondary); }
+
+/* Shared school authorization: compact and theme-aware at phone widths. */
+.wechat-login-panel { padding: 14px; border: 1px solid var(--color-border); border-radius: var(--radius-sm); background: var(--color-surface-muted); }
+.wechat-login-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+.wechat-login-actions .btn { min-width: 0; width: 100%; white-space: normal; line-height: 1.45; padding: 10px 8px; }
+.wechat-login-actions .btn[aria-pressed='true'] { background: var(--color-primary); color: #fff; border-color: var(--color-primary); }
+.wechat-login-actions .btn:disabled { opacity: .55; cursor: wait; }
+.wechat-qr-frame { display: flex; align-items: center; justify-content: center; margin: 12px auto; width: min(220px, 100%); min-height: 200px; padding: 16px; background: #fff; color: #555; border: 1px solid var(--color-border); text-align: center; font-size: 13px; }
+.wechat-qr-frame img { display: block; width: 100%; height: auto; image-rendering: pixelated; }
+.wechat-login-url { display: block; padding: 10px; border: 1px solid var(--color-border); background: var(--color-surface); font: 12px/1.65 ui-monospace, monospace; color: var(--color-text-secondary); overflow-wrap: anywhere; user-select: text; }
+#wechat-login-progress [hidden] { display: none !important; }
 
 @media (prefers-color-scheme: dark) {
   :root {

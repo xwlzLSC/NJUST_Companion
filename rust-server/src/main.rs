@@ -1,7 +1,13 @@
+// 默认网页代理后端，由 npm start -> scripts/run-rust.cjs 启动。
+// 当前 Session 是个人单账号状态；新增多人服务必须另设计隔离，不能复用同一个 Jar。
+// 学校链路分为智慧理工/CAS、教务业务页；HTML 解析与联网错误需分别处理。
+// 与 server.js、js/native-sync.js、小程序云函数保持 API 返回契约一致。
 use std::{env, net::SocketAddr, path::{Path, PathBuf}, sync::{Arc, OnceLock}, time::Duration};
 
 use anyhow::{anyhow, Context, Result};
+use aes::Aes128;
 use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use cbc::cipher::{block_padding::Pkcs7, BlockEncryptMut, KeyIvInit};
 use axum::{
     body::Body,
     extract::{Query, State},
@@ -14,6 +20,7 @@ use chrono::Utc;
 use encoding_rs::{GB18030, GBK};
 use keyring::Entry;
 use regex::Regex;
+use rand::{rngs::OsRng, RngCore};
 use reqwest::{cookie::Jar, redirect::Policy, Client};
 use scraper::{ElementRef, Html, Selector};
 use serde::{Deserialize, Serialize};
@@ -22,9 +29,18 @@ use tokio::{fs, sync::Mutex, time::sleep};
 use tower_http::{services::{ServeDir, ServeFile}, trace::TraceLayer};
 use tracing::info;
 
-const APP_VERSION: &str = "3.0.0-rust";
-const ENTRY_ORIGIN: &str = "http://202.119.81.112:8080";
-const PROFILE_LABEL: &str = "202.119.81.112:8080 互联网入口（Rust）";
+mod library;
+mod academic_review;
+
+const APP_VERSION: &str = "3.0.2-rust-cas";
+const ENTRY_ORIGIN: &str = "http://202.119.81.113:8080";
+const ENTRY_ORIGINS: [&str; 2] = [
+    "http://202.119.81.113:8080",
+    "http://202.119.81.112:8080",
+];
+const PROFILE_LABEL: &str = "智慧理工统一认证（Rust）";
+const OFFICIAL_BUSINESS_BASE: &str = "https://bkjw.njust.edu.cn/njlgdx/";
+const IDS_ORIGIN: &str = "https://ids.njust.edu.cn";
 const SHARDS: [&str; 2] = [
     "http://202.119.81.113:9080/njlgdx/",
     "http://202.119.81.112:9080/njlgdx/",
@@ -44,8 +60,11 @@ struct AppState {
 
 struct Session {
     client: Client,
+    cas_client: Client,
     _jar: Arc<Jar>,
     pending_captcha: bool,
+    pending_entry_origin: String,
+    pending_cas: Option<(CasLoginForm, String, std::time::Instant)>,
     state: StoredState,
     storage_file: PathBuf,
 }
@@ -87,8 +106,18 @@ struct LoginRequest {
     username: String,
     password: String,
     captcha: Option<String>,
+    #[serde(rename = "casCaptcha")]
+    cas_captcha: Option<String>,
     #[serde(rename = "rememberPassword")]
     remember_password: bool,
+}
+
+#[derive(Clone)]
+struct CasLoginForm {
+    action_url: reqwest::Url,
+    page_url: String,
+    salt: String,
+    fields: Vec<(String, String)>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -158,12 +187,16 @@ async fn main() -> Result<()> {
         .route("/api/health", get(health))
         .route("/api/status", get(status))
         .route("/api/auth/captcha", get(captcha))
+        .route("/api/auth/cas-captcha", get(cas_captcha))
         .route("/api/auth/login", post(login))
         .route("/api/auth/logout", post(logout))
         .route("/api/sync/now", post(sync_now))
         .route("/api/settings/semester-start", post(save_semester_start))
         .route("/api/classrooms/options", get(classroom_options))
         .route("/api/classrooms/query", post(classroom_query))
+        .route("/api/library/search", get(library::search))
+        .route("/api/library/detail", get(library::detail))
+        .route("/api/academic-review", get(academic_review_page))
         .fallback_service(static_files)
         .layer(TraceLayer::new_for_http())
         .with_state(app_state);
@@ -191,10 +224,26 @@ impl Session {
             .timeout(Duration::from_secs(20))
             .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/135 Safari/537.36")
             .build()?;
+        let cas_client = Client::builder()
+            .cookie_provider(jar.clone())
+            .redirect(Policy::none())
+            .connect_timeout(Duration::from_secs(8))
+            .timeout(Duration::from_secs(20))
+            .user_agent("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 Chrome/135 Safari/537.36")
+            .build()?;
         // reqwest's in-memory jar intentionally isn't serialized.  On a server
         // restart the app asks for a fresh captcha rather than writing session
         // cookies to disk; no credential or cookie ends up in the state JSON.
-        let mut session = Self { client, _jar: jar, pending_captcha: false, state: StoredState { logged_in: false, ..state }, storage_file };
+        let mut session = Self {
+            client,
+            cas_client,
+            _jar: jar,
+            pending_captcha: false,
+            pending_entry_origin: ENTRY_ORIGIN.to_string(),
+            pending_cas: None,
+            state: StoredState { logged_in: false, ..state },
+            storage_file,
+        };
         if remove_placeholder_schedule_items(&mut session.state.data) {
             session.save().await?;
         }
@@ -227,6 +276,7 @@ impl Session {
             "lastError": self.state.last_error,
             "sessionCheckedAt": self.state.session_checked_at,
             "transport": "rust",
+            "casCaptchaRequired": self.pending_cas.is_some(),
             "counts": {
                 "schedule": array_len(&self.state.data, "schedule"),
                 "grades": array_len(&self.state.data, "grades"),
@@ -257,22 +307,101 @@ impl Session {
         Ok((text, final_url))
     }
 
-    async fn prepare_captcha(&mut self) -> Result<()> {
-        self.client.get(format!("{ENTRY_ORIGIN}/")).send().await?.error_for_status()?;
+    async fn request_cas_text(&self, request: reqwest::RequestBuilder) -> Result<(String, String)> {
+        let mut request = request.build()?;
+        for _ in 0..10 {
+            let current = request.url().clone();
+            if !allowed_cas_url(&current) { return Err(anyhow!("统一认证跳转地址异常，已停止请求")); }
+            let method = request.method().clone();
+            let retry = request.try_clone().ok_or_else(|| anyhow!("统一认证请求无法保留"))?;
+            let response = self.cas_client.execute(request).await.map_err(cas_network_error)?;
+            let status = response.status();
+            let location = response.headers().get(header::LOCATION).and_then(|value| value.to_str().ok()).map(str::to_owned);
+            let html = response.text().await.map_err(cas_network_error)?;
+            let next = if status.is_redirection() { location } else if method == reqwest::Method::GET && !is_cas_login_page(&html) {
+                Regex::new(r#"(?:window|top|self)\.location(?:\.href)?\s*=\s*['"]([^'"]+)['"]"#)?.captures(&html)
+                    .and_then(|caps| caps.get(1)).map(|value| value.as_str().to_string())
+            } else { None };
+            if let Some(next) = next {
+                let target = current.join(&next)?;
+                if !allowed_cas_url(&target) { return Err(anyhow!("统一认证跳转地址异常，已停止请求")); }
+                if method == reqwest::Method::GET || [301, 302, 303].contains(&status.as_u16()) {
+                    request = self.cas_client.get(target).header(header::REFERER, current.as_str()).build()?;
+                } else {
+                    if target.origin() != current.origin() || target.origin() != reqwest::Url::parse(IDS_ORIGIN)?.origin() {
+                        return Err(anyhow!("统一认证要求向其他站点重复提交密码，已停止请求"));
+                    }
+                    request = retry;
+                    *request.url_mut() = target;
+                }
+                continue;
+            }
+            if status.is_redirection() { return Err(anyhow!("统一认证跳转缺少目标地址")); }
+            // CAS returns validation pages with 401 as well as 200. Inspect
+            // the form before converting status codes into generic errors.
+            if status.is_client_error() || status.is_server_error() {
+                if current.host_str() == Some("ids.njust.edu.cn") && is_cas_login_page(&html) {
+                    return Ok((html, current.to_string()));
+                }
+                return Err(anyhow!("学校登录服务返回 HTTP {}，请稍后重试", status.as_u16()));
+            }
+            return Ok((html, current.to_string()));
+        }
+        Err(anyhow!("统一认证跳转次数过多，请重新登录"))
+    }
+
+    async fn prepare_captcha(&mut self, origin: &str) -> Result<()> {
+        self.client.get(format!("{origin}/"))
+            .timeout(Duration::from_secs(8))
+            .send().await?.error_for_status()?;
+        self.pending_entry_origin = origin.to_string();
         self.pending_captcha = true;
         Ok(())
     }
 
     async fn fetch_captcha(&mut self) -> Result<Vec<u8>> {
-        self.prepare_captcha().await?;
-        let response = self.client.get(format!("{ENTRY_ORIGIN}/verifycode.servlet?t={}", Utc::now().timestamp_millis()))
-            .send().await?.error_for_status()?;
-        let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
-        let image = response.bytes().await?.to_vec();
-        if !content_type.starts_with("image/") || image.len() < 256 {
-            return Err(anyhow!("教务系统未返回有效验证码图片（Content-Type: {content_type}）"));
+        let mut last_error = String::new();
+        let mut origins = vec![self.pending_entry_origin.clone()];
+        for origin in ENTRY_ORIGINS {
+            if !origins.iter().any(|candidate| candidate == origin) {
+                origins.push(origin.to_string());
+            }
         }
-        Ok(image)
+        for origin in origins {
+            if let Err(error) = self.prepare_captcha(&origin).await {
+                last_error = error.to_string();
+                continue;
+            }
+            let result = self.client.get(format!("{origin}/verifycode.servlet?t={}", Utc::now().timestamp_millis()))
+                .timeout(Duration::from_secs(8))
+                .send().await
+                .and_then(reqwest::Response::error_for_status);
+            let response = match result {
+                Ok(response) => response,
+                Err(error) => {
+                    last_error = error.to_string();
+                    self.pending_captcha = false;
+                    continue;
+                }
+            };
+            let content_type = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok()).unwrap_or_default().to_owned();
+            let image = match response.bytes().await {
+                Ok(image) => image.to_vec(),
+                Err(error) => {
+                    last_error = error.to_string();
+                    self.pending_captcha = false;
+                    continue;
+                }
+            };
+            if !content_type.starts_with("image/") || image.len() < 256 {
+                last_error = format!("教务系统未返回有效验证码图片（Content-Type: {content_type}）");
+                self.pending_captcha = false;
+                continue;
+            }
+            return Ok(image);
+        }
+        self.pending_captcha = false;
+        Err(anyhow!("两个教务入口均无法获取验证码：{}", if last_error.is_empty() { "网络异常" } else { &last_error }))
     }
 
     async fn verify_session(&mut self) -> Result<bool> {
@@ -282,10 +411,11 @@ impl Session {
         }
         let url = build_url(&self.state.business_base, "framework/main.jsp")?;
         match self.request_text(self.client.get(url)).await {
-            Ok((html, _)) => {
+            Ok((html, final_url)) => {
                 self.state.session_checked_at = now();
-                self.state.logged_in = !is_unauthenticated(&html);
-                if !self.state.logged_in { self.state.last_error = "会话已失效，请重新获取验证码登录".into(); }
+                self.state.logged_in = is_academic_authenticated(&html)
+                    && !final_url.contains("/authserver/login");
+                if !self.state.logged_in { self.state.last_error = "会话已失效，请通过智慧理工重新登录".into(); }
                 self.save().await?;
                 Ok(self.state.logged_in)
             }
@@ -299,21 +429,110 @@ impl Session {
         }
     }
 
+    async fn login_cas(&mut self, username: &str, password: &str, remember_password: bool, captcha: &str) -> Result<()> {
+        self.state.logged_in = false;
+        self.state.last_error = "正在通过智慧理工统一认证登录".into();
+        let mut form = if !captcha.is_empty() {
+            match self.pending_cas.take() {
+                Some((form, account, created)) if account == username && created.elapsed() < Duration::from_secs(180) => form,
+                _ => return Err(anyhow!("验证码会话已过期或账号已改变，请重新点击登录")),
+            }
+        } else {
+            self.pending_cas = None;
+            let entry_url = build_url(OFFICIAL_BUSINESS_BASE, "indexsso.jsp")?;
+            let (login_html, page_url) = self.request_cas_text(self.cas_client.get(&entry_url)).await
+                .map_err(|error| anyhow!("教务 SSO 入口无法访问：{error}"))?;
+            parse_cas_login_form(&login_html, &page_url)?
+        };
+
+        if captcha.is_empty() {
+            let fingerprint = random_cas_bytes(16).iter().map(|byte| format!("{byte:02X}")).collect::<String>();
+            self.client.get(format!("{IDS_ORIGIN}/authserver/bfp/info?bfp={fingerprint}"))
+                .header(header::REFERER, &form.page_url)
+                .send().await?.error_for_status()?;
+            let captcha_status: Value = self.client.get(format!("{IDS_ORIGIN}/authserver/checkNeedCaptcha.htl"))
+                .query(&[("username", username)])
+                .header(header::REFERER, &form.page_url)
+                .send().await?.error_for_status()?.json().await
+                .context("统一认证验证码状态无法确认")?;
+            match captcha_status.get("isNeed").and_then(Value::as_bool) {
+                Some(false) => {},
+                Some(true) => {
+                    self.pending_cas = Some((form, username.into(), std::time::Instant::now()));
+                    return Err(anyhow!("学校要求验证码，请填写下方图片中的字符后再次登录"));
+                },
+                None => return Err(anyhow!("统一认证验证码状态无法确认，请稍后重试")),
+            }
+        }
+
+        set_cas_field(&mut form.fields, "username", username);
+        set_cas_field(&mut form.fields, "password", &encrypt_cas_password(password, &form.salt)?);
+        set_cas_field(&mut form.fields, "captcha", captcha);
+        if !form.fields.iter().any(|(key, _)| key == "_eventId") {
+            set_cas_field(&mut form.fields, "_eventId", "submit");
+        }
+        form.fields.retain(|(key, _)| !["rememberMe", "passwordText", "userPassword"].contains(&key.as_str()));
+        let (response_html, final_url) = self.request_cas_text(
+            self.cas_client.post(form.action_url.clone())
+                .header(header::ORIGIN, IDS_ORIGIN)
+                .header(header::REFERER, &form.page_url)
+                .form(&form.fields)
+        ).await.map_err(|error| anyhow!("统一认证提交失败：{error}"))?;
+        if final_url.contains("/authserver/login") || is_cas_login_page(&response_html) {
+            let message = cas_login_error(&response_html);
+            if message.contains("验证码") || Regex::new(r#"needCaptcha\s*=\s*["']?true"#)?.is_match(&response_html) {
+                if let Ok(next_form) = parse_cas_login_form(&response_html, &final_url) {
+                    self.pending_cas = Some((next_form, username.into(), std::time::Instant::now()));
+                }
+            }
+            return Err(anyhow!(message));
+        }
+
+        self.state.business_base = OFFICIAL_BUSINESS_BASE.into();
+        if !self.verify_session().await? {
+            return Err(anyhow!("统一认证已响应，但教务系统会话未建立"));
+        }
+        self.state.username = username.into();
+        self.state.remember_password = remember_password;
+        self.pending_captcha = false;
+        if remember_password {
+            match credential(username) {
+                Ok(entry) => if let Err(error) = entry.set_password(password) {
+                    info!(%error, "system credential store unavailable; password will not be persisted");
+                    self.state.remember_password = false;
+                },
+                Err(error) => {
+                    info!(%error, "system credential store unavailable; password will not be persisted");
+                    self.state.remember_password = false;
+                },
+            }
+        } else {
+            let _ = credential(username).and_then(|entry| entry.delete_credential().map_err(Into::into));
+        }
+        self.state.last_error.clear();
+        self.save().await?;
+        Ok(())
+    }
+
     async fn login(&mut self, payload: LoginRequest) -> Result<()> {
         let username = clean(&payload.username);
         if username.is_empty() || payload.password.is_empty() { return Err(anyhow!("用户名、密码不能为空")); }
         let password = payload.password.clone();
         let remember_password = payload.remember_password;
         let manual_captcha = clean(payload.captcha.as_deref().unwrap_or_default());
+        if manual_captcha.is_empty() {
+            return self.login_cas(&username, &password, remember_password, payload.cas_captcha.as_deref().unwrap_or_default().trim()).await;
+        }
         let glm_key = GLM_API_KEY.get().and_then(|value| value.clone());
 
-        // 未输入验证码且配置了 GLM key 时启用自动识别（最多重试 15 次）
+        // 网页/安卓使用本地 ddddocr；此处仅保留已配置的后台 GLM 兼容路径。
+        // 限制重试，避免长时间持有会话锁，阻塞用户刷新和手动登录。
         let auto_solve = manual_captcha.is_empty() && glm_key.is_some();
         if !auto_solve && manual_captcha.is_empty() {
             return Err(anyhow!("请输入验证码；验证码与当前会话绑定，请先刷新验证码"));
         }
 
-        let max_attempts = if auto_solve { 15usize } else { 1usize };
+        let max_attempts = if auto_solve { 3usize } else { 1usize };
         let mut attempt = 0usize;
         let mut last_error = String::new();
 
@@ -327,30 +546,9 @@ impl Session {
             };
 
             let captcha = if auto_solve {
-                let mut solved = String::new();
-                let mut strict = 0usize;
-                let mut first_error = String::new();
-                while solved.len() != 4 && strict < 10 {
-                    strict += 1;
-                    let image = match self.fetch_captcha().await {
-                        Ok(image) => image,
-                        Err(error) => {
-                            if first_error.is_empty() { first_error = error.to_string(); }
-                            continue;
-                        }
-                    };
-                    match solve_captcha_glm(&image, glm_key.as_deref().unwrap_or_default()).await {
-                        Ok(text) => solved = text,
-                        Err(error) => {
-                            if first_error.is_empty() { first_error = format!("GLM 识别失败：{error}"); }
-                        }
-                    }
-                }
-                if solved.len() != 4 {
-                    let detail = if first_error.is_empty() { String::new() } else { format!("（{first_error}）") };
-                    return Err(anyhow!("自动识别验证码失败{detail}，请手动输入验证码重试"));
-                }
-                solved
+                let image = self.fetch_captcha().await?;
+                solve_captcha_glm(&image, glm_key.as_deref().unwrap_or_default()).await
+                    .context("后台识别失败，请在登录页使用自动识别或手动输入验证码")?
             } else {
                 if !self.pending_captcha { return Err(anyhow!("验证码已失效，请刷新后重试")); }
                 manual_captcha.clone()
@@ -361,15 +559,19 @@ impl Session {
                 ("RANDOMCODE", captcha.as_str()), ("useDogCode", ""),
             ];
             let (html, final_url) = match self.request_text(
-                self.client.post(format!("{ENTRY_ORIGIN}/Logon.do?method=logon"))
-                    .header(header::ORIGIN, ENTRY_ORIGIN)
-                    .header(header::REFERER, format!("{ENTRY_ORIGIN}/"))
+                self.client.post(format!("{}/Logon.do?method=logon", self.pending_entry_origin))
+                    .header(header::ORIGIN, self.pending_entry_origin.as_str())
+                    .header(header::REFERER, format!("{}/", self.pending_entry_origin))
                     .form(&form)
             ).await {
                 Ok(pair) => pair,
                 Err(error) => {
                     last_error = error.to_string();
-                    if max_attempts > 1 { sleep(Duration::from_millis(500)).await; continue; }
+                    if max_attempts > 1 {
+                        self.pending_entry_origin = next_entry_origin(&self.pending_entry_origin).to_string();
+                        sleep(Duration::from_millis(500)).await;
+                        continue;
+                    }
                     return Err(error);
                 }
             };
@@ -377,16 +579,36 @@ impl Session {
 
             if let Some(message) = login_error(&html) {
                 last_error = message.clone();
-                if message.contains("验证码") && max_attempts > 1 { continue; }
+                if message.contains("验证码") && max_attempts > 1 {
+                    self.pending_entry_origin = next_entry_origin(&self.pending_entry_origin).to_string();
+                    continue;
+                }
                 return Err(anyhow!(message));
             }
 
-            self.state.business_base = business_base_from_url(&final_url).unwrap_or_else(|| shard_for(&username).to_string());
             self.state.username = username.clone();
             self.state.remember_password = remember_password;
-            if !self.verify_session().await? {
+            let preferred_base = business_base_from_url(&final_url).unwrap_or_else(|| shard_for(&username).to_string());
+            let mut candidates = vec![preferred_base.clone()];
+            for base in SHARDS {
+                if base != preferred_base {
+                    candidates.push(base.to_string());
+                }
+            }
+            let mut session_verified = false;
+            for base in candidates {
+                self.state.business_base = base.to_string();
+                if self.verify_session().await? {
+                    session_verified = true;
+                    break;
+                }
+            }
+            if !session_verified {
                 last_error = "登录未建立有效会话，请检查账号、密码、验证码或校园网环境".into();
-                if max_attempts > 1 { continue; }
+                if max_attempts > 1 {
+                    self.pending_entry_origin = next_entry_origin(&self.pending_entry_origin).to_string();
+                    continue;
+                }
                 return Err(anyhow!(last_error));
             }
             if remember_password {
@@ -421,7 +643,7 @@ impl Session {
 
     async fn ensure_session(&mut self) -> Result<()> {
         if self.state.logged_in && self.verify_session().await? { return Ok(()); }
-        Err(anyhow!("当前未登录，请先获取验证码并登录"))
+        Err(anyhow!("当前未登录，请通过智慧理工统一认证登录"))
     }
 
     async fn keep_alive(&mut self) -> Result<bool> {
@@ -436,7 +658,7 @@ impl Session {
             }
             Ok(_) => {
                 self.state.logged_in = false;
-                self.state.last_error = "会话已失效，请重新获取验证码登录".into();
+                self.state.last_error = "会话已失效，请通过智慧理工重新登录".into();
                 self.save().await?;
                 Ok(false)
             }
@@ -454,7 +676,7 @@ impl Session {
         let result = self.request_text(self.client.get(&url)).await?;
         if is_unauthenticated(&result.0) {
             self.state.logged_in = false;
-            self.state.last_error = "会话已失效，请重新获取验证码登录".into();
+            self.state.last_error = "会话已失效，请通过智慧理工重新登录".into();
             self.save().await?;
             return Err(anyhow!("会话已失效，请重新登录"));
         }
@@ -571,7 +793,7 @@ async fn solve_captcha_glm(image: &[u8], api_key: &str) -> Result<String> {
             "role": "user",
             "content": [
                 { "type": "image_url", "image_url": { "url": format!("data:image/jpeg;base64,{encoded}") } },
-                { "type": "text", "text": "这是一个验证码图片，请识别图片中的字符。只返回识别出的字符，不要有任何其他说明文字。验证码由4个字符组成，可能包含数字和字母（大小写）。" }
+                { "type": "text", "text": "这是一个验证码图片，请按图片实际内容识别全部字符，只返回识别出的字符，不要有任何其他说明文字。验证码通常为4到6个字符，可能包含数字和字母（大小写）。" }
             ]
         }],
         "temperature": 0.1,
@@ -579,43 +801,21 @@ async fn solve_captcha_glm(image: &[u8], api_key: &str) -> Result<String> {
     });
 
     let client = Client::builder()
-        .timeout(Duration::from_secs(20))
+        .timeout(Duration::from_secs(8))
         .build()?;
 
-    let mut last_error = anyhow!("GLM 识别失败");
-    for _ in 0..3 {
-        let response = client.post(GLM_API_URL)
-            .bearer_auth(api_key)
-            .json(&body)
-            .send().await;
-        let response = match response {
-            Ok(response) => response,
-            Err(error) => {
-                last_error = anyhow!("网络请求失败：{error}");
-                sleep(Duration::from_millis(1500)).await;
-                continue;
-            }
-        };
-        let data: Value = match response.json().await {
-            Ok(data) => data,
-            Err(error) => {
-                last_error = anyhow!("响应解析失败：{error}");
-                continue;
-            }
-        };
-        // GLM 返回 code 1305 表示该模型临时访问量过大，稍等重试
-        if let Some(code) = data["error"]["code"].as_i64() {
-            if code == 1305 {
-                sleep(Duration::from_millis(1500)).await;
-                continue;
-            }
-        }
-        let text = data["choices"][0]["message"]["content"].as_str().unwrap_or("").to_string();
-        let cleaned: String = text.chars().filter(|character| character.is_ascii_alphanumeric()).collect();
-        if cleaned.len() == 4 { return Ok(cleaned); }
-        last_error = anyhow!("GLM 返回的验证码无效：{text}");
+    let data: Value = client.post(GLM_API_URL)
+        .bearer_auth(api_key)
+        .json(&body)
+        .send().await?
+        .error_for_status()?
+        .json().await?;
+    if !data["error"].is_null() { return Err(anyhow!("GLM 识别服务暂不可用")); }
+    let text = data["choices"][0]["message"]["content"].as_str().unwrap_or("").trim();
+    if (4..=6).contains(&text.len()) && text.chars().all(|character| character.is_ascii_alphanumeric()) {
+        return Ok(text.to_string());
     }
-    Err(last_error.context("GLM API 调用失败"))
+    Err(anyhow!("GLM 未返回有效验证码，请使用登录页的本地识别"))
 }
 
 fn start_session_keep_alive(app: AppState) {
@@ -656,6 +856,7 @@ fn start_saved_session_restore(app: AppState) {
             username,
             password,
             captcha: None,
+            cas_captcha: None,
             remember_password: true,
         };
         match session.login(payload).await {
@@ -700,9 +901,38 @@ async fn captcha(State(app): State<AppState>, Query(query): Query<CaptchaQuery>)
     }
 }
 
+async fn cas_captcha(State(app): State<AppState>) -> Response {
+    let mut session = app.session.lock().await;
+    let page_url = match &session.pending_cas {
+        Some((form, _, created)) if created.elapsed() < Duration::from_secs(180) => form.page_url.clone(),
+        _ => {
+            session.pending_cas = None;
+            return api_error(StatusCode::BAD_REQUEST, "验证码会话已过期，请重新点击登录");
+        }
+    };
+    let result = async {
+        let response = session.cas_client.get(format!("{IDS_ORIGIN}/authserver/getCaptcha.htl?t={}", Utc::now().timestamp_millis()))
+            .header(header::REFERER, page_url).send().await.map_err(cas_network_error)?;
+        let mime = response.headers().get(header::CONTENT_TYPE).and_then(|value| value.to_str().ok())
+            .unwrap_or_default().split(';').next().unwrap_or_default().to_string();
+        if !response.status().is_success() || !mime.starts_with("image/") { return Err(anyhow!("学校验证码图片加载失败，请重试")); }
+        let bytes = response.bytes().await.map_err(cas_network_error)?;
+        Ok(format!("data:{mime};base64,{}", BASE64.encode(bytes)))
+    }.await;
+    match result {
+        Ok(image) => ([(header::CACHE_CONTROL, "no-store")], Json(json!({"ok": true, "imageDataUrl": image}))).into_response(),
+        Err(error) => api_error(StatusCode::BAD_GATEWAY, error.to_string()),
+    }
+}
+
 async fn login(State(app): State<AppState>, Json(payload): Json<LoginRequest>) -> Response {
     let mut session = app.session.lock().await;
-    if let Err(error) = session.login(payload).await { return api_error_with_status(StatusCode::BAD_REQUEST, error.to_string(), &session); }
+    if let Err(error) = session.login(payload).await {
+        session.state.logged_in = false;
+        session.state.last_error = error.to_string();
+        let _ = session.save().await;
+        return api_error_with_status(StatusCode::BAD_REQUEST, error.to_string(), &session);
+    }
     let data = match session.sync_all().await {
         Ok(data) => data,
         Err(error) => return Json(json!({"ok": true, "status": session.status(), "data": session.state.data, "warning": error.to_string()})).into_response(),
@@ -715,6 +945,7 @@ async fn logout(State(app): State<AppState>) -> Response {
     if session.state.remember_password && !session.state.username.is_empty() { let _ = credential(&session.state.username).and_then(|entry| entry.delete_credential().map_err(Into::into)); }
     session.state = StoredState::default();
     session.pending_captcha = false;
+    session.pending_cas = None;
     if let Err(error) = session.save().await { return api_error(StatusCode::INTERNAL_SERVER_ERROR, error.to_string()); }
     Json(json!({"ok": true, "status": session.status(), "data": session.state.data})).into_response()
 }
@@ -739,6 +970,22 @@ async fn classroom_options(State(app): State<AppState>, Query(query): Query<Clas
     let campus = clean(query.campus.as_deref().unwrap_or("01"));
     match classroom_options_inner(&mut session, if campus.is_empty() { "01" } else { &campus }).await {
         Ok(options) => Json(json!({"ok": true, "options": options, "status": session.status()})).into_response(),
+        Err(error) => api_error_with_status(StatusCode::BAD_REQUEST, error.to_string(), &session),
+    }
+}
+
+// 读取学校原表，而不是用缓存成绩推算。先验证会话，失败返回错误且不清空旧数据。
+async fn academic_review_page(State(app): State<AppState>) -> Response {
+    let mut session = app.session.lock().await;
+    let expected_owner = session.state.username.clone();
+    let result = async {
+        let (html, _) = session.fetch_page("xsxj/zxsc.do").await?;
+        let rows = academic_review::rows(&html)?;
+        if expected_owner != session.state.username { return Err(anyhow!("登录账号已变化，请重新打开学业审查")); }
+        Ok::<_, anyhow::Error>(json!({"ok": true, "rows": rows, "fetchedAt": now(), "owner": session.state.username, "status": session.status()}))
+    }.await;
+    match result {
+        Ok(payload) => Json(payload).into_response(),
         Err(error) => api_error_with_status(StatusCode::BAD_REQUEST, error.to_string(), &session),
     }
 }
@@ -794,11 +1041,112 @@ async fn classroom_query_inner(session: &mut Session, payload: ClassroomRequest)
 fn empty_data() -> Value { json!({"schedule": [], "grades": [], "certs": [], "exams": [], "meta": {"semester": "", "semesterStart": "", "importedAt": "", "sources": {}}}) }
 fn now() -> String { Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true) }
 fn clean(value: &str) -> String { value.replace('\u{a0}', " ").split_whitespace().collect::<Vec<_>>().join(" ") }
+fn random_cas_bytes(length: usize) -> Vec<u8> {
+    let mut bytes = vec![0u8; length];
+    OsRng.fill_bytes(&mut bytes);
+    bytes
+}
+fn random_cas_string(length: usize) -> String {
+    const ALPHABET: &[u8] = b"ABCDEFGHJKMNPQRSTWXYZabcdefhijkmnprstwxyz2345678";
+    random_cas_bytes(length).iter().map(|byte| ALPHABET[*byte as usize % ALPHABET.len()] as char).collect()
+}
+fn encrypt_cas_password(password: &str, salt: &str) -> Result<String> {
+    if salt.as_bytes().len() != 16 { return Err(anyhow!("统一认证加密盐已变化，请更新应用")); }
+    let iv = random_cas_string(16);
+    let message = format!("{}{}", random_cas_string(64), password);
+    let mut buffer = message.into_bytes();
+    let plain_len = buffer.len();
+    buffer.resize((plain_len / 16 + 1) * 16, 0);
+    let encryptor = cbc::Encryptor::<Aes128>::new_from_slices(salt.as_bytes(), iv.as_bytes())
+        .map_err(|_| anyhow!("统一认证加密参数无效"))?;
+    let encrypted = encryptor.encrypt_padded_mut::<Pkcs7>(&mut buffer, plain_len)
+        .map_err(|_| anyhow!("统一认证密码加密失败"))?;
+    Ok(BASE64.encode(encrypted))
+}
+fn set_cas_field(fields: &mut Vec<(String, String)>, name: &str, value: &str) {
+    if let Some((_, current)) = fields.iter_mut().find(|(key, _)| key == name) {
+        *current = value.into();
+    } else {
+        fields.push((name.into(), value.into()));
+    }
+}
+fn allowed_cas_url(url: &reqwest::Url) -> bool {
+    if !url.username().is_empty() || url.password().is_some() { return false; }
+    matches!((url.scheme(), url.host_str(), url.port()),
+        ("https", Some("ids.njust.edu.cn" | "bkjw.njust.edu.cn"), None)
+        | ("http", Some("bkjw.njust.edu.cn"), None)
+        | ("http", Some("202.119.81.112" | "202.119.81.113"), Some(8080 | 9080)))
+}
+fn cas_network_error(error: reqwest::Error) -> anyhow::Error {
+    // Never include a redirect URL: its query may contain a one-time ticket.
+    if error.is_timeout() { anyhow!("学校响应超时，请稍后重试") }
+    else if error.is_connect() { anyhow!("无法连接学校认证服务，请检查网络后重试") }
+    else { anyhow!("学校认证连接中断，请重新登录") }
+}
+// 表单 action、service 与盐字段共同绑定这次 CAS 登录；只接受已知学校目标。
+// 如果找不到表单，先检查重定向/错误页；不能替换为旧教务验证码入口强行提交。
+fn parse_cas_login_form(html: &str, page_url: &str) -> Result<CasLoginForm> {
+    let document = Html::parse_document(html);
+    let input_selector = selector("input[name]");
+    let form = document.select(&selector("form"))
+        .find(|node| node.select(&input_selector).any(|input| matches!(input.value().attr("name"), Some("passwordText" | "userPassword"))))
+        .ok_or_else(|| anyhow!("统一认证表单未找到：教务入口可能返回了中间跳转页"))?;
+    let source_url = reqwest::Url::parse(page_url)?;
+    let mut action_url = source_url.join(form.value().attr("action").unwrap_or("/authserver/login"))?;
+    if action_url.scheme() != "https" || action_url.host_str() != Some("ids.njust.edu.cn")
+        || !action_url.path().starts_with("/authserver/login") {
+        return Err(anyhow!("统一认证登录地址异常，已停止提交密码"));
+    }
+    let mut service = action_url.query_pairs().find(|(key, _)| key == "service").map(|(_, value)| value.into_owned());
+    if service.is_none() {
+        service = source_url.query_pairs().find(|(key, _)| key == "service").map(|(_, value)| value.into_owned());
+    }
+    if service.is_none() {
+        service = Regex::new(r#"\bvar\s+service\s*=\s*['\"]([^'\"]+)['\"]"#)?
+            .captures(html).and_then(|matches| matches.get(1))
+            .map(|value| value.as_str().replace("\\/", "/"));
+    }
+    let service = service.ok_or_else(|| anyhow!("统一认证目标地址缺失，请稍后重试"))?;
+    if reqwest::Url::parse(&service)?.host_str() != Some("bkjw.njust.edu.cn") {
+        return Err(anyhow!("统一认证目标地址异常，已停止提交密码"));
+    }
+    if !action_url.query_pairs().any(|(key, _)| key == "service") {
+        action_url.query_pairs_mut().append_pair("service", &service);
+    }
+    let salt = document.select(&selector("#pwdEncryptSalt"))
+        .next().and_then(|node| node.value().attr("value")).unwrap_or_default().to_string();
+    let fields = form.select(&input_selector)
+        .filter_map(|node| node.value().attr("name").map(|name| (name.to_string(), node.value().attr("value").unwrap_or_default().to_string())))
+        .collect::<Vec<_>>();
+    if salt.as_bytes().len() != 16 || !fields.iter().any(|(key, value)| key == "execution" && !value.is_empty()) {
+        return Err(anyhow!("统一认证表单已变化，请更新应用后重试"));
+    }
+    Ok(CasLoginForm { action_url, page_url: page_url.into(), salt, fields })
+}
+fn is_cas_login_page(html: &str) -> bool {
+    html.contains("pwdFromId") && (html.contains("passwordText") || html.contains("userPassword"))
+}
+fn cas_login_error(html: &str) -> String {
+    let document = Html::parse_document(html);
+    for selector_text in ["#showErrorTip", "#formErrorTip", "#showWarnTip", ".item-error-tip", ".error-tip", "#pwdErrorTip", "#nameErrorTip", "#captchaErrorTip", ".alert-danger"] {
+        for node in document.select(&selector(selector_text)) {
+            let message = text(&node);
+            if !message.is_empty() { return message; }
+        }
+    }
+    if html.contains("密码错误") || html.contains("账号或密码") { return "智慧理工账号或密码错误".into(); }
+    "智慧理工未接受登录，请检查账号密码或认证要求".into()
+}
+fn is_academic_authenticated(html: &str) -> bool {
+    !is_unauthenticated(html) && !is_cas_login_page(html)
+        && ["学生个人中心", "理论课表", "xs_main.jsp", "个人中心"].iter().any(|marker| html.contains(marker))
+}
 fn array_len(value: &Value, key: &str) -> usize { value.get(key).and_then(Value::as_array).map_or(0, Vec::len) }
 fn selector(value: &str) -> Selector { Selector::parse(value).expect("fixed CSS selector") }
 fn text(node: &ElementRef<'_>) -> String { clean(&node.text().collect::<Vec<_>>().join(" ")) }
 fn build_url(base: &str, path: &str) -> Result<String> { Ok(reqwest::Url::parse(base)?.join(path)?.to_string()) }
 fn business_origin(base: &str) -> Result<String> { let url = reqwest::Url::parse(base)?; Ok(format!("{}://{}", url.scheme(), url.host_str().unwrap_or_default())) }
+fn next_entry_origin(current: &str) -> &'static str { if current == ENTRY_ORIGINS[0] { ENTRY_ORIGINS[1] } else { ENTRY_ORIGINS[0] } }
 fn shard_for(username: &str) -> &'static str { username.parse::<u128>().map(|id| SHARDS[(id % 2) as usize]).unwrap_or(SHARDS[0]) }
 fn business_base_from_url(value: &str) -> Option<String> { Regex::new(r"(http://202\.119\.81\.(?:112|113):9080/njlgdx/)").ok()?.captures(value).and_then(|caps| caps.get(1)).map(|m| m.as_str().to_string()) }
 fn is_unauthenticated(html: &str) -> bool { Regex::new(r#"登录个人中心|用户登录|verifycode\.servlet|Verifyservlet|name=\"USERNAME\"|请先登录系统|用户没有登录|强智科技教务系统概念版"#).unwrap().is_match(html) }
@@ -980,6 +1328,42 @@ fn parse_classroom_rows(html: &str) -> ClassroomRows { let document = Html::pars
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    #[ignore = "contacts the school using an empty username, no real account"]
+    async fn cas_anonymous_login_reports_school_message() {
+        let file = std::env::temp_dir().join(format!("njust-anonymous-cas-{}.json", std::process::id()));
+        let mut session = Session::load(file).await.unwrap();
+        let error = session.login_cas("", "", false, "").await.unwrap_err().to_string();
+        assert!(error.contains("用户名") || error.contains("账号"), "unexpected anonymous response: {error}");
+    }
+
+    #[test]
+    fn cas_mobile_errors_and_redirect_destinations() {
+        let html = r#"<form id="pwdFromId" action="/authserver/login"><input name="userPassword"><input name="password"><input name="execution" value="e2s1"><input id="pwdEncryptSalt" value="1234567890abcdef"><div id="formErrorTip">验证码错误，请重新输入</div></form>"#;
+        let form = parse_cas_login_form(html, "https://ids.njust.edu.cn/authserver/login?service=http%3A%2F%2Fbkjw.njust.edu.cn%2Fnjlgdx%2Findexsso.jsp").unwrap();
+        assert_eq!(form.fields.iter().find(|(key, _)| key == "execution").unwrap().1, "e2s1");
+        assert!(is_cas_login_page(html));
+        assert_eq!(cas_login_error(html), "验证码错误，请重新输入");
+        assert!(allowed_cas_url(&reqwest::Url::parse("https://ids.njust.edu.cn:443/authserver/login").unwrap()));
+        assert!(!allowed_cas_url(&reqwest::Url::parse("https://ids.njust.edu.cn.evil.example/login").unwrap()));
+        assert!(!allowed_cas_url(&reqwest::Url::parse("http://ids.njust.edu.cn/authserver/login").unwrap()));
+    }
+
+    #[test]
+    fn cas_form_preserves_academic_service_and_encrypted_password() {
+        use cbc::cipher::BlockDecryptMut;
+        let html = r#"<form id="pwdFromId" action="/authserver/login"><input name="passwordText"><input name="execution" value="e1s1"><input name="_eventId" value="submit"></form><input id="pwdEncryptSalt" value="1234567890abcdef"><script>var service = 'https://bkjw.njust.edu.cn/njlgdx/indexsso.jsp';</script>"#;
+        let form = parse_cas_login_form(html, "https://ids.njust.edu.cn/authserver/login").unwrap();
+        assert_eq!(form.action_url.host_str(), Some("ids.njust.edu.cn"));
+        assert!(form.action_url.query().unwrap_or_default().contains("service="));
+        let encrypted = encrypt_cas_password("example-password", &form.salt).unwrap();
+        assert_ne!(encrypted, "example-password");
+        let mut ciphertext = BASE64.decode(encrypted).unwrap();
+        let decryptor = cbc::Decryptor::<Aes128>::new_from_slices(form.salt.as_bytes(), &[0u8; 16]).unwrap();
+        let decrypted = decryptor.decrypt_padded_mut::<Pkcs7>(&mut ciphertext).unwrap();
+        assert!(decrypted.ends_with(b"example-password"));
+    }
 
     #[test]
     fn parses_the_real_schedule_grid_fixture() {

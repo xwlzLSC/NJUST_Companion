@@ -1,3 +1,8 @@
+/** @maintenance
+ * 网页与 APK 共用的应用协调层。负责 IndexedDB、页面状态、数据合并、同步入口、通知与导航。
+ * 脚本由 index.html 按顺序加载，不是 ES 模块；扩展模块通过同一个 window 使用这里的 state 和公共函数。
+ * 改学校 HTML 解析请去 parser.js；改 APK 会话请去 native-sync.js；不要把联网细节塞进渲染函数。
+ */
 /**
  * 南理教务助手
  * 本地优先、可安装、按模块同步的教务数据查看器
@@ -22,7 +27,7 @@ const EXAM_FILTERS = [
   { key: 'past', label: '已结束' }
 ];
 const MAIN_PAGES = ['home', 'schedule', 'grades', 'exams', 'settings'];
-const SUB_PAGES = ['classrooms', 'sites', 'todos'];
+const SUB_PAGES = ['classrooms', 'sites', 'todos', 'insights', 'reminders', 'library', 'campus'];
 const PAGE_TITLES = {
   home: '南理教务助手',
   schedule: '课表查询',
@@ -31,6 +36,10 @@ const PAGE_TITLES = {
   classrooms: '空闲教室',
   sites: '常用网站',
   todos: '待办事件',
+  insights: '课表检查与变更',
+  reminders: '提醒检查',
+  library: '图书馆检索',
+  campus: '校园助手',
   settings: '设置'
 };
 const COMMON_SITES = [
@@ -104,6 +113,7 @@ const DEFAULT_NOTIFICATION_SETTINGS = {
   enabled: false,
   courseReminders: true,
   todoReminders: true,
+  examReminders: true,
   gradeReminders: true,
   leadMinutes: 30,
   permissionState: 'unknown',
@@ -135,42 +145,42 @@ const UI_STYLE_LABELS = {
   notebook: '课堂笔记',
   midnight: '午夜专注'
 };
-const DEFAULT_QUICK_ORDER = ['schedule', 'grades', 'exams', 'classrooms', 'sites', 'todos', 'settings', 'network'];
+const DEFAULT_QUICK_ORDER = ['schedule', 'grades', 'exams', 'classrooms', 'sites', 'todos', 'settings', 'library'];
 const DEFAULT_NAV_ORDER = ['home', 'schedule', 'grades', 'exams', 'settings'];
 const UI_STYLE_LAYOUTS = Object.fromEntries(
   UI_STYLES.map(style => [style, { quickOrder: DEFAULT_QUICK_ORDER, navOrder: DEFAULT_NAV_ORDER }])
 );
 const UI_ICON_SETS = {
   editorial: {
-    quick: { schedule: 'i-calendar', grades: 'i-chart', exams: 'i-file', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-cloud', network: 'i-wifi' },
+    quick: { schedule: 'i-calendar', grades: 'i-chart', exams: 'i-file', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-cloud', library: 'i-book' },
     nav: { home: 'i-home', schedule: 'i-calendar', grades: 'i-chart', exams: 'i-file', settings: 'i-settings' }
   },
   aurora: {
-    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', library: 'i-book' },
     nav: { home: 'i-orbit', schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', settings: 'i-sliders' }
   },
   minimal: {
-    quick: { schedule: 'i-week', grades: 'i-pulse', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sliders', network: 'i-signal' },
+    quick: { schedule: 'i-week', grades: 'i-pulse', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sliders', library: 'i-book' },
     nav: { home: 'i-dashboard', schedule: 'i-week', grades: 'i-pulse', exams: 'i-note', settings: 'i-sliders' }
   },
   brutal: {
-    quick: { schedule: 'i-grid', grades: 'i-bars', exams: 'i-bookmark', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-sync', network: 'i-wifi' },
+    quick: { schedule: 'i-grid', grades: 'i-bars', exams: 'i-bookmark', classrooms: 'i-building', sites: 'i-link', todos: 'i-check', settings: 'i-sync', library: 'i-book' },
     nav: { home: 'i-grid', schedule: 'i-timeline', grades: 'i-bars', exams: 'i-bookmark', settings: 'i-sliders' }
   },
   compact: {
-    quick: { schedule: 'i-week', grades: 'i-bars', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-check', settings: 'i-sync', network: 'i-signal' },
+    quick: { schedule: 'i-week', grades: 'i-bars', exams: 'i-note', classrooms: 'i-door', sites: 'i-globe', todos: 'i-check', settings: 'i-sync', library: 'i-book' },
     nav: { home: 'i-dashboard', schedule: 'i-calendar', grades: 'i-bars', exams: 'i-note', settings: 'i-settings' }
   },
   timeline: {
-    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    quick: { schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', library: 'i-book' },
     nav: { home: 'i-dashboard', schedule: 'i-week', grades: 'i-trend', exams: 'i-ticket', settings: 'i-sliders' }
   },
   notebook: {
-    quick: { schedule: 'i-bookmark', grades: 'i-bars', exams: 'i-note', classrooms: 'i-building', sites: 'i-globe', todos: 'i-check', settings: 'i-cloud', network: 'i-wifi' },
+    quick: { schedule: 'i-bookmark', grades: 'i-bars', exams: 'i-note', classrooms: 'i-building', sites: 'i-globe', todos: 'i-check', settings: 'i-cloud', library: 'i-book' },
     nav: { home: 'i-note', schedule: 'i-bookmark', grades: 'i-bars', exams: 'i-file', settings: 'i-sliders' }
   },
   midnight: {
-    quick: { schedule: 'i-orbit', grades: 'i-pulse', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', network: 'i-signal' },
+    quick: { schedule: 'i-orbit', grades: 'i-pulse', exams: 'i-ticket', classrooms: 'i-door', sites: 'i-globe', todos: 'i-list', settings: 'i-sync', library: 'i-book' },
     nav: { home: 'i-moon', schedule: 'i-orbit', grades: 'i-pulse', exams: 'i-ticket', settings: 'i-sliders' }
   }
 };
@@ -1348,6 +1358,9 @@ function isPlaceholderScheduleName(value) {
     .trim() === '';
 }
 
+/** @maintenance
+ * 把单条课程整理为统一字段。weekText、startWeek/endWeek 与 oddEven 要保持一致；分段周次的展开由解析器负责，不能只保留首段。
+ */
 function normalizeScheduleItem(item) {
   if (!item || typeof item !== 'object') return null;
   // Older Rust/Node sync payloads may already contain a timetable cell whose
@@ -1380,6 +1393,7 @@ function normalizeScheduleItem(item) {
     stage: cleanText(item.stage),
     groupName: cleanText(item.groupName),
     semester: cleanText(item.semester),
+    weekText: cleanText(item.weekText),
     weekday,
     periods,
     startWeek,
@@ -1502,7 +1516,7 @@ function normalizeMeta(meta, raw) {
   const sourceMeta = meta && typeof meta === 'object' ? meta : {};
   return {
     semester: cleanText(sourceMeta.semester),
-    semesterStart: normalizeDateString(sourceMeta.semesterStart),
+    semesterStart: window.NJUSTCampus?.startFor(sourceMeta) || normalizeDateString(sourceMeta.semesterStart),
     importedAt: normalizeIsoTime(sourceMeta.importedAt),
     fullExport: Boolean(sourceMeta.fullExport),
     type: cleanText(sourceMeta.type),
@@ -1572,6 +1586,9 @@ function inferSectionsFromImport(raw) {
   return present;
 }
 
+/** @maintenance
+ * 按模块合并远端结果与本机数据。普通同步与首次登录的整体替换不是同一件事；调用方应明确选择，避免把历史考试残留带回。
+ */
 function mergeImportedData(currentData, incomingRaw) {
   const sections = inferSectionsFromImport(incomingRaw);
   if (sections.length === 0) {
@@ -1846,6 +1863,9 @@ function isCourseActiveInWeek(course, week) {
   return true;
 }
 
+/** @maintenance
+ * 课表、首页、提醒和日历导出的共同取课入口。先应用课程编辑覆盖，再按周次、星期、单双周筛选；新增显示逻辑应复用这里。
+ */
 function getCoursesForDay(weekday, week) {
   return getAllScheduleCourses()
     .map(course => {
@@ -1918,12 +1938,16 @@ function buildStatusGridHtml() {
   }).join('');
 }
 
+/** @maintenance
+ * 统一请求入口：浏览器访问自己的代理后端，APK 转给 nativeApiRequest。业务 UI 不应直接决定学校 URL 或处理 Cookie。
+ */
 async function apiRequest(path, options = {}) {
   if (isNativeSyncAvailable()) {
     return nativeApiRequest(path, options);
   }
 
   const response = await fetch(path, {
+    cache: 'no-store',
     headers: {
       'Content-Type': 'application/json',
       ...(options.headers || {})
@@ -1946,6 +1970,9 @@ function isNativeSyncAvailable() {
   return Boolean(window.NJUSTNativeSync?.isSupported?.());
 }
 
+/** @maintenance
+ * 将网页 API 路径映射到 APK 原生同步方法，保持两端返回契约相同。新增接口时同时检查后端路由与对应原生方法。
+ */
 async function nativeApiRequest(path, options = {}) {
   const method = String(options.method || 'GET').toUpperCase();
   let body = {};
@@ -1965,8 +1992,12 @@ async function nativeApiRequest(path, options = {}) {
   if (path === '/api/auth/login' && method === 'POST') {
     return window.NJUSTNativeSync.loginAndSync(body);
   }
+  if (path === '/api/auth/cas-captcha') return window.NJUSTNativeSync.getCasCaptcha();
   if (path === '/api/sync/now' && method === 'POST') {
     return window.NJUSTNativeSync.syncNow();
+  }
+  if (path === '/api/academic-review' && method === 'GET') {
+    return window.NJUSTNativeSync.getAcademicReview();
   }
   if (path === '/api/auth/logout' && method === 'POST') {
     return window.NJUSTNativeSync.logout();
@@ -2003,10 +2034,12 @@ async function keepAliveNativeSession() {
 
 async function persistCurrentData() {
   await dbSet('main', state.data);
+  await window.NJUSTStudyFeatures?.persist();
 }
 
 function applyRemoteData(data, status = {}) {
   if (!data) return;
+  data = window.NJUSTStudyFeatures?.inspectRemote(data, status) || data;
   state.data = normalizeData(data);
   stampDataImportedAt(status.lastSyncAt || state.server.lastSyncAt || state.data.meta.importedAt);
   state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || state.selectedWeek || 1);
@@ -2027,10 +2060,13 @@ function renderServerStatus() {
 
   if (state.server.loggedIn) {
     statusText.classList.add('online');
-    statusText.textContent = '已登录';
+    statusText.textContent = state.server.connectionUncertain ? '网络待确认' : '已登录';
     if (statusDetail) {
       const savedHint = state.server.credentialsSaved || state.server.rememberPassword ? ' · 密码已安全保存' : '';
-      statusDetail.textContent = `${state.server.username || '教务账号'}${savedHint} · 最近同步 ${formatRelativeImportTime(getDisplaySyncAt())}`;
+      const wechatHint = state.server.loginMethod === 'wechat' ? ' · 微信会话有效时可自动恢复（学校授权到期需再次确认）' : '';
+      statusDetail.textContent = state.server.connectionUncertain
+        ? `${state.server.lastError || '网络暂不可用'}。已保留离线课表，不会因此清除数据。`
+        : `${state.server.username || '智慧理工账号'}${savedHint}${wechatHint} · 最近同步 ${formatRelativeImportTime(getDisplaySyncAt())}${state.server.sessionSaveWarning ? ` · ${state.server.sessionSaveWarning}` : ''}`;
     }
   } else if (state.server.recovering) {
     statusText.classList.add('recovering');
@@ -2059,7 +2095,7 @@ function buildSettingsLoginGuideHtml() {
         <div>
           <div class="setting-label">新手提示</div>
           <div class="setting-desc">
-            账号一般填学号或教务系统用户名，密码填教务处密码，初始密码常见为学号。登录成功后，这个提示会自动隐藏。
+            请填写智慧理工统一认证账号（通常为学号）和当前密码。登录成功后，这个提示会自动隐藏。
           </div>
         </div>
         <button class="btn btn-soft btn-sm" type="button" onclick="openUsageGuide()">查看完整说明</button>
@@ -2068,12 +2104,12 @@ function buildSettingsLoginGuideHtml() {
         <div class="guide-inline-step">
           <span>01</span>
           <strong>账号</strong>
-          <small>输入学号 / 教务系统账号</small>
+          <small>输入智慧理工账号（通常为学号）</small>
         </div>
         <div class="guide-inline-step">
           <span>02</span>
           <strong>密码</strong>
-          <small>输入教务处密码，勾选记住密码后可在掉线时自动重登</small>
+          <small>输入智慧理工密码，勾选记住密码后可在掉线时自动重登</small>
         </div>
         <div class="guide-inline-step">
           <span>03</span>
@@ -2096,6 +2132,7 @@ function closeUsageGuide() {
 async function refreshServerStatus({ silent = false, check = false } = {}) {
   try {
     const previousImportedAt = state.data.meta.importedAt;
+    const previousGradeSignature = buildGradeSignature();
     const payload = await apiRequest(`/api/status${check ? '?check=1' : ''}`, { method: 'GET' });
     state.server.available = true;
     const mergedStatus = {
@@ -2120,8 +2157,9 @@ async function refreshServerStatus({ silent = false, check = false } = {}) {
     }
     const normalizedRemoteData = payload.data ? normalizeData(payload.data) : null;
     if (normalizedRemoteData && (hasAnyData(normalizedRemoteData) || mergedStatus.lastSyncAt)) {
-      applyRemoteData(normalizedRemoteData, mergedStatus);
+      applyRemoteData(payload.data, mergedStatus);
       await persistCurrentData();
+      if (previousImportedAt !== state.data.meta.importedAt) await afterDataChanged({ previousGradeSignature });
     }
     renderServerStatus();
     if (!silent || previousImportedAt !== state.data.meta.importedAt) {
@@ -2139,64 +2177,358 @@ async function refreshServerStatus({ silent = false, check = false } = {}) {
   }
 }
 
-async function refreshCaptcha({ silent = false } = {}) {
-  const image = document.getElementById('login-captcha-image');
-  const row = document.getElementById('login-captcha-row');
-  if (!image) return;
-  const username = document.getElementById('login-username')?.value.trim() || state.server.username || '';
-  if (!username) {
-    image.removeAttribute('src');
-    image.alt = '请先输入学号';
-    if (row) row.dataset.captchaStatus = '请先输入学号后加载验证码';
-    if (!silent) showToast('请先输入学号，再刷新验证码');
-    return;
-  }
-  image.alt = '验证码';
-  if (row) row.dataset.captchaStatus = '正在获取验证码…';
+let loginBusy = false;
+let wechatLoginLink = '';
+let wechatLoginBusy = false;
+let wechatLoginChecking = false;
+let wechatLoginTimer = null;
+let wechatBridge = null;
+let wechatLoginAttempt = null;
+let wechatLoginMode = 'qr';
+let wechatLoginClock = null;
+let wechatLoginFailures = 0;
+let wechatLoginPaused = false;
+let wechatLoginExpired = false;
+let wechatLoginForeground = true;
+let wechatLoginMessage = '';
+let syncUiPromise = null;
+let nativeResumePromise = null;
+let lastNativeResumeAt = 0;
+try { wechatLoginMode = localStorage.getItem('njust-wechat-login-mode') === 'link' ? 'link' : 'qr'; } catch {}
 
-  if (isNativeSyncAvailable()) {
-    try {
-      const payload = await window.NJUSTNativeSync.fetchCaptcha(username);
-      image.src = payload.imageDataUrl;
-      if (row) row.dataset.captchaStatus = '请输入图片中的验证码；点击图片可刷新';
-    } catch (error) {
-      image.removeAttribute('src');
-      image.alt = '验证码获取失败';
-      if (row) row.dataset.captchaStatus = `验证码获取失败：${error.message || '请检查校园网'}`;
-      if (!silent) showToast(error.message || '获取验证码失败');
-    }
-    return;
+async function refreshCasCaptcha() {
+  const panel = document.getElementById('cas-captcha-panel');
+  panel.hidden = !state.server.casCaptchaRequired;
+  if (panel.hidden) return;
+  document.getElementById('cas-captcha-input').value = '';
+  try {
+    const result = await apiRequest('/api/auth/cas-captcha');
+    document.getElementById('cas-captcha-image').src = result.imageDataUrl;
+  } catch (error) {
+    showToast(error.message || '验证码图片加载失败');
+    await refreshServerStatus({ silent: true });
+    panel.hidden = !state.server.casCaptchaRequired;
   }
-
-  const url = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
-  // 教务服务器偶发不可达时自动重试几次，避免一次网络抖动直接报「获取失败」
-  let loadAttempts = 0;
-  const maxLoadAttempts = 3;
-  image.onload = () => {
-    if (row) row.dataset.captchaStatus = '请输入图片中的验证码；点击图片可刷新';
-  };
-  image.onerror = async () => {
-    loadAttempts += 1;
-    if (loadAttempts < maxLoadAttempts) {
-      if (row) row.dataset.captchaStatus = `验证码获取中，正在重试 (${loadAttempts + 1}/${maxLoadAttempts})…`;
-      await new Promise(resolve => setTimeout(resolve, 800));
-      image.src = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
-      return;
-    }
-    image.removeAttribute('src');
-    image.alt = '验证码获取失败';
-    let message = '请检查校园网或网络连接';
-    try {
-      const response = await fetch(url, { cache: 'no-store' });
-      const payload = await response.json().catch(() => null);
-      message = payload?.error || message;
-    } catch {}
-    if (row) row.dataset.captchaStatus = `验证码获取失败：${message}`;
-    if (!silent) showToast(`验证码获取失败：${message}`);
-  };
-  image.src = url;
 }
 
+function scheduleWechatLoginCheck() {
+  clearTimeout(wechatLoginTimer);
+  if (!wechatLoginLink || wechatLoginBusy || wechatLoginChecking || wechatLoginExpired || wechatLoginPaused
+    || document.hidden || !wechatLoginForeground) return;
+  wechatLoginTimer = setTimeout(() => {
+    void checkWechatLogin({ silent: true });
+  }, Math.min(15000, 4000 * Math.pow(2, wechatLoginFailures)));
+}
+
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) pauseWechatLoginChecks();
+  else if (wechatLoginLink) resumeWechatLoginChecks();
+});
+
+function pauseWechatLoginChecks() {
+  wechatLoginForeground = false;
+  clearTimeout(wechatLoginTimer);
+  clearInterval(wechatLoginClock);
+}
+
+function resumeWechatLoginChecks() {
+  wechatLoginForeground = true;
+  startWechatLoginClock();
+  updateWechatLoginPanel();
+  if (wechatLoginLink && !wechatLoginExpired) void checkWechatLogin({ silent: true });
+}
+
+function startWechatLoginClock() {
+  clearInterval(wechatLoginClock);
+  if (!wechatLoginLink || document.hidden || !wechatLoginForeground || wechatLoginExpired) return;
+  wechatLoginClock = setInterval(() => updateWechatLoginPanel(), 1000);
+}
+
+function cancelWechatLogin({ quiet = false } = {}) {
+  if (wechatLoginBusy) {
+    if (!quiet) showToast('正在处理授权，请稍候再取消');
+    return false;
+  }
+  try { window.NJUSTNativeSync?.cancelWechatLogin?.(); }
+  catch (error) { if (!quiet) showToast(error.message); return false; }
+  clearTimeout(wechatLoginTimer);
+  clearInterval(wechatLoginClock);
+  wechatLoginLink = '';
+  wechatLoginAttempt = null;
+  wechatLoginExpired = false;
+  wechatLoginPaused = false;
+  wechatLoginFailures = 0;
+  wechatLoginMessage = '';
+  updateWechatLoginPanel();
+  return true;
+}
+
+function updateWechatLoginPanel(message = '') {
+  const entry = document.getElementById('wechat-login-entry');
+  const progress = document.getElementById('wechat-login-progress');
+  if (entry) entry.style.display = isNativeSyncAvailable() ? '' : 'none';
+  if (progress) progress.style.display = wechatLoginLink ? '' : 'none';
+  if (message) wechatLoginMessage = message;
+  const pending = window.NJUSTNativeSync?.getPendingWechatLogin?.();
+  if (pending && pending.uuid === wechatLoginAttempt?.uuid) wechatLoginAttempt.submitted = pending.submitted;
+  const submitted = Boolean(wechatLoginAttempt?.submitted);
+  const deadline = submitted ? wechatLoginAttempt?.verifyUntil : wechatLoginAttempt?.expiresAt;
+  const seconds = Math.max(0, Math.ceil((Number(deadline || 0) - Date.now()) / 1000));
+  if (wechatLoginLink && !seconds && !wechatLoginBusy && !wechatLoginExpired) {
+    wechatLoginExpired = true;
+    wechatLoginPaused = true;
+    wechatLoginMessage = '本次学校授权已过期，请重新获取二维码或链接。';
+    clearTimeout(wechatLoginTimer);
+    clearInterval(wechatLoginClock);
+    try { window.NJUSTNativeSync?.cancelWechatLogin?.(); } catch {}
+  }
+  const label = document.getElementById('wechat-login-message');
+  if (label) label.textContent = wechatLoginMessage;
+  const expiry = document.getElementById('wechat-login-expiry');
+  if (expiry) expiry.textContent = wechatLoginExpired ? '授权已过期' : submitted
+    ? `学校已确认 · 正在完成会话检查（${seconds} 秒）` : `授权剩余 ${seconds} 秒`;
+  for (const mode of ['qr', 'link']) {
+    const button = document.getElementById(`wechat-mode-${mode}`);
+    button?.setAttribute('aria-pressed', String(wechatLoginMode === mode));
+    const panel = document.getElementById(`wechat-${mode}-panel`);
+    if (panel) panel.hidden = wechatLoginMode !== mode;
+  }
+  const image = document.getElementById('wechat-login-qr');
+  const imageUrl = !wechatLoginExpired && /^data:image\/(png|jpeg);base64,[A-Za-z0-9+/=]+$/.test(wechatLoginAttempt?.imageDataUrl || '')
+    ? wechatLoginAttempt.imageDataUrl : '';
+  if (image) {
+    image.hidden = !imageUrl;
+    if (imageUrl && image.getAttribute('src') !== imageUrl) image.src = imageUrl;
+    else if (!imageUrl) image.removeAttribute('src');
+  }
+  const placeholder = document.getElementById('wechat-qr-placeholder');
+  if (placeholder) {
+    placeholder.hidden = Boolean(imageUrl);
+    placeholder.textContent = wechatLoginExpired ? '二维码已过期' : wechatLoginBusy ? '二维码正在加载' : '图片不可用，可切换链接登录或重新获取';
+  }
+  const link = document.getElementById('wechat-login-url');
+  if (link) link.textContent = wechatLoginExpired ? '链接已过期，请重新获取' : wechatLoginLink;
+  document.querySelectorAll('[data-wechat-action]').forEach(button => {
+    button.disabled = wechatLoginBusy || loginBusy
+      || (button.hasAttribute('data-wechat-usable') && (wechatLoginExpired || submitted))
+      || (button.hasAttribute('data-wechat-check') && (wechatLoginExpired || wechatLoginChecking));
+  });
+}
+
+async function selectWechatLoginMode(mode) {
+  if (wechatLoginBusy || loginBusy) return;
+  wechatLoginMode = mode === 'link' ? 'link' : 'qr';
+  try { localStorage.setItem('njust-wechat-login-mode', wechatLoginMode); } catch {}
+  updateWechatLoginPanel();
+  if (wechatLoginMode === 'qr' && wechatLoginLink && !wechatLoginExpired && !wechatLoginAttempt?.imageDataUrl
+    && !wechatLoginAttempt?.submitted) {
+    wechatLoginBusy = true;
+    updateWechatLoginPanel('正在加载当前授权的二维码，不会更换授权。');
+    let active = true;
+    const uuid = wechatLoginAttempt?.uuid;
+    try {
+      const result = await withWechatActionDeadline(() => window.NJUSTNativeSync.getWechatQrImage(),
+        12000, '二维码加载未及时响应，可以先使用链接登录');
+      if (!active || wechatLoginAttempt?.uuid !== uuid) return;
+      wechatLoginAttempt = result;
+      updateWechatLoginPanel('二维码已就绪，请扫码确认后返回 APK。');
+    } catch (error) { updateWechatLoginPanel(error.message); }
+    finally { active = false; wechatLoginBusy = false; updateWechatLoginPanel(); scheduleWechatLoginCheck(); }
+  }
+}
+
+async function refreshWechatLogin() {
+  if (!cancelWechatLogin({ quiet: true })) return;
+  await startWechatLogin(wechatLoginMode);
+}
+
+async function startWechatLogin(mode = wechatLoginMode) {
+  if (!isNativeSyncAvailable()) return showToast('微信授权入口仅在安卓安装版中可用');
+  if (wechatLoginBusy || loginBusy) return;
+  if (wechatLoginLink && !wechatLoginExpired) return selectWechatLoginMode(mode);
+  if (wechatLoginExpired && !cancelWechatLogin({ quiet: true })) return;
+  await selectWechatLoginMode(mode);
+  wechatLoginBusy = true;
+  updateWechatLoginPanel();
+  try {
+    const result = await window.NJUSTNativeSync.beginWechatLogin({ includeImage: wechatLoginMode === 'qr' });
+    wechatLoginLink = result.url;
+    wechatLoginAttempt = result;
+    wechatLoginFailures = 0;
+    wechatLoginPaused = false;
+    wechatLoginExpired = false;
+    wechatLoginForeground = !document.hidden;
+    startWechatLoginClock();
+    updateWechatLoginPanel(result.warning || '学校授权已生成。请选择扫码或链接，在微信确认后返回 APK。');
+  } catch (error) {
+    showToast(error.message || '获取微信授权失败');
+  } finally {
+    wechatLoginBusy = false;
+    updateWechatLoginPanel();
+    scheduleWechatLoginCheck();
+  }
+}
+
+function getWechatBridge() {
+  if (wechatBridge) return wechatBridge;
+  const cap = window.capacitorExports || {};
+  wechatBridge = cap.registerPlugin?.('WechatBridge') || window.Capacitor?.registerPlugin?.('WechatBridge');
+  if (!wechatBridge) throw new Error('微信组件不可用，请更新安装包');
+  // Capacitor's plugin Proxy exposes a synthetic `then` method. Never await
+  // the plugin itself or return it from an async function: Promise assimilation
+  // invokes the nonexistent WechatBridge.then and leaves the caller pending.
+  // Only the actual plugin METHOD promises may be awaited.
+  const bridge = wechatBridge;
+  void withWechatActionDeadline(() => bridge.addListener('appReturned', () => {
+    if (wechatLoginLink) resumeWechatLoginChecks();
+  }), 5000, '微信返回监听暂不可用').catch(() => {});
+  return bridge;
+}
+
+function withWechatActionDeadline(task, milliseconds, message) {
+  let timer;
+  return Promise.race([
+    Promise.resolve().then(task),
+    new Promise((_, reject) => { timer = setTimeout(() => reject(new Error(message)), milliseconds); })
+  ]).finally(() => clearTimeout(timer));
+}
+
+function isWechatLoginUsable() {
+  updateWechatLoginPanel();
+  return Boolean(wechatLoginLink && !wechatLoginExpired && !wechatLoginAttempt?.submitted);
+}
+
+async function saveWechatLoginQr() {
+  if (wechatLoginBusy || !isWechatLoginUsable()) return;
+  wechatLoginBusy = true;
+  updateWechatLoginPanel();
+  let active = true;
+  const uuid = wechatLoginAttempt?.uuid;
+  try {
+    // The deadline covers image loading AND the native save, not just the
+    // last step. A late image response must not silently save after timeout.
+    await withWechatActionDeadline(async () => {
+      const attempt = wechatLoginAttempt?.imageDataUrl ? wechatLoginAttempt
+        : await window.NJUSTNativeSync.getWechatQrImage();
+      if (!active || wechatLoginAttempt?.uuid !== uuid) throw new Error('本次保存已结束');
+      if (!isWechatLoginUsable() || Date.now() >= attempt.expiresAt) throw new Error('二维码已过期或已确认，请重新获取');
+      wechatLoginAttempt = attempt;
+      const bridge = getWechatBridge();
+      await bridge.saveQrImage({ imageDataUrl: attempt.imageDataUrl });
+    }, 12000, '保存图片未及时响应，可检查相册或改用链接登录');
+    updateWechatLoginPanel('二维码已保存到相册。打开微信 → 扫一扫 → 相册，确认学校授权后返回 APK。');
+    showToast('二维码已保存，请在微信扫一扫中选择相册');
+  } catch (error) { showToast(error.message || '保存二维码失败，可改用链接登录'); }
+  finally { active = false; wechatLoginBusy = false; updateWechatLoginPanel(); scheduleWechatLoginCheck(); }
+}
+
+async function openWechatForLogin() {
+  if (wechatLoginBusy || !isWechatLoginUsable()) return;
+  wechatLoginBusy = true;
+  updateWechatLoginPanel();
+  try {
+    await withWechatActionDeadline(() => getWechatBridge().openWechat(), 5000, '打开微信未及时响应，请手动打开微信');
+    updateWechatLoginPanel('请在微信扫一扫中识别二维码，确认后返回 APK，应用会自动检查授权。');
+  } catch (error) { showToast(error.message || '无法打开微信，请手动打开'); }
+  finally { wechatLoginBusy = false; updateWechatLoginPanel(); scheduleWechatLoginCheck(); }
+}
+
+async function shareWechatLoginLink() {
+  if (wechatLoginBusy || !isWechatLoginUsable()) return;
+  wechatLoginBusy = true;
+  updateWechatLoginPanel();
+  let failure = '';
+  try {
+    const result = await withWechatActionDeadline(() => getWechatBridge().copyLinkAndOpenWechat({ url: wechatLoginLink }),
+      5000, '微信未及时响应，请手动打开微信；若已打开，无需重复点击');
+    if (!result?.copied) throw new Error('授权链接未能复制，请手动复制');
+    updateWechatLoginPanel(result.opened
+      ? '链接已复制并打开微信。请粘贴到文件传输助手或自己的聊天，点开并确认，然后返回 APK。'
+      : '链接已复制，但未能自动打开微信。请手动打开微信，粘贴给自己，点开并确认后返回 APK。');
+    if (!result.opened) showToast('链接已复制，请手动打开微信');
+  } catch (error) { failure = error.message || '无法打开微信'; }
+  finally { wechatLoginBusy = false; updateWechatLoginPanel(); scheduleWechatLoginCheck(); }
+  if (failure) await copyWechatLoginLink({ fallback: true, reason: failure });
+}
+
+async function copyWechatLoginLink({ fallback = false, reason = '' } = {}) {
+  if (wechatLoginBusy || !isWechatLoginUsable()) return;
+  wechatLoginBusy = true;
+  updateWechatLoginPanel();
+  try {
+    await withWechatActionDeadline(() => copyTextToClipboard(wechatLoginLink), 3000, '复制未及时响应，请长按授权链接手动复制');
+    updateWechatLoginPanel('授权链接已复制。请只发送给自己，在微信内打开并确认，然后返回本应用。');
+    showToast(fallback ? `${reason || '请手动打开微信'}。链接已复制` : '授权链接已复制');
+  } catch (error) {
+    showToast(error.message || '复制授权链接失败');
+  }
+  finally { wechatLoginBusy = false; updateWechatLoginPanel(); scheduleWechatLoginCheck(); }
+}
+
+async function checkWechatLogin({ silent = false } = {}) {
+  if (!wechatLoginLink || wechatLoginBusy || wechatLoginChecking) return;
+  updateWechatLoginPanel();
+  if (wechatLoginExpired || (silent && (document.hidden || !wechatLoginForeground || wechatLoginPaused))) return;
+  if (!silent) { wechatLoginFailures = 0; wechatLoginPaused = false; }
+  // Authorization polling must not lock the gallery/clipboard/navigation
+  // buttons while the school responds. The native layer deduplicates requests
+  // and rejects canceled challenges before any one-time authorization POST.
+  const uuid = wechatLoginAttempt?.uuid;
+  wechatLoginChecking = true;
+  updateWechatLoginPanel();
+  try {
+    const payload = await window.NJUSTNativeSync.pollWechatLogin();
+    if (!wechatLoginLink || wechatLoginAttempt?.uuid !== uuid) return;
+    wechatLoginFailures = 0;
+    if (payload.state !== 'authorized') {
+      updateWechatLoginPanel(payload.state === 'establishing' ? '微信已确认，正在确认教务会话，请稍候。'
+        : payload.state === 'confirming' ? '已扫描或打开授权，请在微信中确认登录，随后返回 APK。'
+        : '等待微信确认。请扫码或打开学校授权链接，确认后返回 APK。');
+      return;
+    }
+    wechatLoginLink = '';
+    wechatLoginAttempt = null;
+    wechatLoginMessage = '';
+    clearTimeout(wechatLoginTimer);
+    clearInterval(wechatLoginClock);
+    updateWechatLoginPanel();
+    const previousGradeSignature = buildGradeSignature();
+    state.server.available = true;
+    const syncedAt = payload.status?.lastSyncAt || '';
+    state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
+    state.loginPrefs = { ...DEFAULT_LOGIN_PREFS };
+    await persistLoginPrefs();
+    const passwordInput = document.getElementById('login-password');
+    if (passwordInput) passwordInput.value = '';
+    const rememberInput = document.getElementById('login-remember');
+    if (rememberInput) rememberInput.checked = false;
+    applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
+    await persistCurrentData();
+    await afterDataChanged({ previousGradeSignature });
+    renderCurrentPage();
+    if (state.currentPage !== 'home') renderHome();
+    renderServerStatus();
+    showToast(payload.warning ? `微信登录成功，同步未完成：${payload.warning}` : '微信登录成功，数据已同步');
+  } catch (error) {
+    if (!wechatLoginLink || wechatLoginAttempt?.uuid !== uuid) return;
+    if (/过期|已使用/.test(String(error.message || '')) || !window.NJUSTNativeSync.getPendingWechatLogin?.()) {
+      wechatLoginExpired = true;
+      wechatLoginPaused = true;
+      clearInterval(wechatLoginClock);
+    } else {
+      wechatLoginFailures += 1;
+      wechatLoginPaused = wechatLoginFailures >= 5;
+    }
+    updateWechatLoginPanel(wechatLoginExpired ? `${error.message || '本次授权已结束'}，请重新获取。`
+      : wechatLoginPaused ? '网络连续检查失败，已暂停。请检查网络后点击「检查授权」，或重新获取。'
+      : `${error.message || '网络暂时不可用'}；将稍后重试检查，不会重复提交授权。`);
+    if (!silent || wechatLoginExpired) showToast(error.message || '检查微信授权失败');
+  } finally {
+    wechatLoginChecking = false;
+    updateWechatLoginPanel();
+    scheduleWechatLoginCheck();
+  }
+}
 async function syncNativeLoginPreference({ username = '', password = '', rememberPassword = false } = {}) {
   if (!isNativeSyncAvailable() || !window.NJUSTNativeSync?.saveLoginPreference) return;
   const payload = await window.NJUSTNativeSync.saveLoginPreference({ username, password, rememberPassword });
@@ -2249,135 +2581,94 @@ async function updateRememberPasswordPreference(rememberPassword) {
   }
 }
 
-let browserOcrWorker = null;
-
-async function getBrowserOcrWorker() {
-  if (!browserOcrWorker) {
-    if (!window.Tesseract) throw new Error('浏览器 OCR 引擎未能加载，请检查网络');
-    browserOcrWorker = await window.Tesseract.createWorker('eng');
-    await browserOcrWorker.setParameters({
-      tessedit_char_whitelist: '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz'
-    });
-  }
-  return browserOcrWorker;
-}
-
-function blobToDataURL(blob) {
-  return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onload = () => resolve(reader.result);
-    reader.onerror = () => reject(reader.error);
-    reader.readAsDataURL(blob);
-  });
-}
-
-async function solveCaptchaWithBrowserOCR(username) {
-  if (!window.Tesseract) return '';
-  const image = document.getElementById('login-captcha-image');
-  try {
-    const worker = await getBrowserOcrWorker();
-    for (let attempt = 0; attempt < 5; attempt += 1) {
-      const url = `/api/auth/captcha?username=${encodeURIComponent(username)}&t=${Date.now()}`;
-      const response = await fetch(url, { cache: 'no-store' });
-      if (!response.ok) continue;
-      const dataUrl = await blobToDataURL(await response.blob());
-      if (image) image.src = dataUrl;
-      const ret = await worker.recognize(dataUrl);
-      const text = String(ret.data.text || '').replace(/[^A-Za-z0-9]/g, '');
-      if (text.length === 4) return text;
-    }
-    return '';
-  } catch (error) {
-    console.warn('浏览器 OCR 识别失败', error);
-    return '';
-  }
-}
-
 async function loginAndSync() {
+  if (wechatLoginBusy || wechatLoginChecking) return showToast('正在确认微信授权，请稍候再切换登录方式');
+  if (loginBusy) return;
+  loginBusy = true;
+  const inputs = ['login-username', 'login-password'].map(id => document.getElementById(id)).filter(Boolean);
+  inputs.forEach(input => { input.disabled = true; });
+  try {
+    await loginAndSyncInternal();
+  } catch (error) {
+    showToast(error.message || '登录失败，请重试');
+  } finally {
+    loginBusy = false;
+    inputs.forEach(input => { input.disabled = false; });
+    updateWechatLoginPanel();
+  }
+}
+
+/** @maintenance
+ * 交互登录流程。登录方式、记住密码、验证码状态与同步结果在这里协调；用户正在授权时不要额外启动后台恢复抢占会话。
+ */
+async function loginAndSyncInternal() {
   const username = document.getElementById('login-username').value.trim();
   const passwordInput = document.getElementById('login-password');
   const password = passwordInput.value;
   const rememberPassword = document.getElementById('login-remember')?.checked || false;
-  const captchaRow = document.getElementById('login-captcha-row');
+  const casCaptcha = state.server.casCaptchaRequired ? document.getElementById('cas-captcha-input').value.trim() : '';
+  if (state.server.casCaptchaRequired && !casCaptcha) return showToast('请输入智慧理工验证码');
   const isNative = isNativeSyncAvailable();
-
-  const canUseSavedPassword = Boolean(isNativeSyncAvailable() && rememberPassword && (state.server.credentialsSaved || state.server.rememberPassword));
+  const canUseSavedPassword = Boolean(isNative && rememberPassword && (state.server.credentialsSaved || state.server.rememberPassword));
   if (!username || (!password && !canUseSavedPassword)) {
     showToast('请输入用户名和密码，或使用已安全保存的密码');
     return;
   }
 
-  let captcha = document.getElementById('login-captcha').value.trim();
-  // 网页版：验证码留空用浏览器 OCR 自动识别，识别失败自动换图重试；
-  // 原生容器（安卓）由 NJUSTNativeSync.loginAndSync 内部 OCR 处理，保持提交空验证码。
-  const maxAttempts = isNative ? 1 : 6;
-
-  for (let attempt = 0; attempt < maxAttempts; attempt += 1) {
-    if (!isNative && !captcha) {
-      if (captchaRow) {
-        captchaRow.dataset.captchaStatus = attempt === 0
-          ? '正在自动识别验证码，无需手动输入…'
-          : `正在重新识别验证码 (尝试 ${attempt + 1}/${maxAttempts})…`;
-      }
-      showToast(attempt === 0 ? '未输入验证码，正在自动识别…' : '验证码错误，正在重新识别…');
-      captcha = await solveCaptchaWithBrowserOCR(username);
-      if (!captcha) {
-        if (captchaRow) captchaRow.dataset.captchaStatus = '';
-        refreshCaptcha();
-        showToast('自动识别验证码失败，请手动输入图片中的验证码');
-        return;
-      }
-      document.getElementById('login-captcha').value = captcha;
+  try {
+    if (wechatLoginLink) cancelWechatLogin();
+    const previousGradeSignature = buildGradeSignature();
+    const payload = await apiRequest('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, rememberPassword, casCaptcha })
+    });
+    wechatLoginLink = '';
+    updateWechatLoginPanel();
+    document.getElementById('cas-captcha-panel').hidden = true;
+    state.server.available = true;
+    const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
+    state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
+    state.loginPrefs = normalizeLoginPrefs({
+      username,
+      password: rememberPassword ? password : '',
+      rememberPassword
+    });
+    await persistLoginPrefs();
+    if (rememberPassword && isNative) {
+      await syncNativeLoginPreference({ username, password, rememberPassword: true });
     }
-
-    try {
-      const previousGradeSignature = buildGradeSignature();
-      const payload = await apiRequest('/api/auth/login', {
-        method: 'POST',
-        body: JSON.stringify({ username, password, captcha, rememberPassword })
-      });
-      state.server.available = true;
-      const syncedAt = getNewestIsoTime(payload.status?.lastSyncAt, new Date().toISOString());
-      state.server = { ...state.server, ...payload.status, lastSyncAt: syncedAt };
-      state.loginPrefs = normalizeLoginPrefs({
-        username,
-        password: rememberPassword ? password : '',
-        rememberPassword
-      });
-      await persistLoginPrefs();
-      if (rememberPassword && isNative) {
-        await syncNativeLoginPreference({ username, password, rememberPassword: true });
-      }
-      applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
-      await persistCurrentData();
-      await afterDataChanged({ previousGradeSignature });
-      renderCurrentPage();
-      if (state.currentPage !== 'home') renderHome();
-      renderServerStatus();
-      if (passwordInput && state.server.credentialsSaved) {
-        passwordInput.value = '';
-        passwordInput.placeholder = '密码已安全保存，无需重复输入';
-      }
-      document.getElementById('login-captcha').value = '';
-      refreshCaptcha();
-      showToast(payload.warning ? `登录成功，但同步失败：${payload.warning}` : '登录成功，数据已同步');
-      return;
-    } catch (error) {
-      const message = error.message || '登录失败';
-      // 网页 OCR 模式：验证码类错误自动换一张重新识别；其它错误直接提示
-      if (!isNative && message.includes('验证码') && attempt < maxAttempts - 1) {
-        captcha = '';
-        continue;
-      }
-      refreshCaptcha();
-      showToast(message);
-      await refreshServerStatus({ silent: true });
-      return;
+    applyRemoteData(payload.data, { ...payload.status, lastSyncAt: syncedAt });
+    await persistCurrentData();
+    await afterDataChanged({ previousGradeSignature });
+    renderCurrentPage();
+    if (state.currentPage !== 'home') renderHome();
+    renderServerStatus();
+    if (passwordInput && state.server.credentialsSaved) {
+      passwordInput.value = '';
+      passwordInput.placeholder = '密码已安全保存，无需重复输入';
     }
+    showToast(payload.warning ? `登录成功，但同步失败：${payload.warning}` : '登录成功，数据已同步');
+  } catch (error) {
+    showToast(error.message || '登录失败');
+    await refreshServerStatus({ silent: true });
+    await refreshCasCaptcha();
   }
 }
-
 async function syncNow({ silent = false } = {}) {
+  if (syncUiPromise) {
+    if (!silent) showToast('正在同步，请稍候');
+    return syncUiPromise;
+  }
+  if (loginBusy || wechatLoginLink || wechatLoginBusy || wechatLoginChecking) {
+    if (!silent) showToast('请先完成或取消当前登录，再进行同步');
+    return;
+  }
+  syncUiPromise = syncNowInternal({ silent });
+  try { return await syncUiPromise; }
+  finally { syncUiPromise = null; }
+}
+
+async function syncNowInternal({ silent = false } = {}) {
   if (!state.server.available) {
     if (!silent) {
       openImportModal();
@@ -2407,6 +2698,7 @@ async function syncNow({ silent = false } = {}) {
 }
 
 async function logoutServer() {
+  if (loginBusy || wechatLoginBusy || wechatLoginChecking || syncUiPromise) return showToast('正在登录或同步，请完成后再退出');
   if (!state.server.available) {
     showToast('本地同步服务未启动');
     return;
@@ -2416,6 +2708,8 @@ async function logoutServer() {
       method: 'POST',
       body: JSON.stringify({})
     });
+    cancelWechatLogin({ quiet: true });
+    await window.NJUSTStudyFeatures?.clearAudit();
     state.server = { ...state.server, ...payload.status };
     applyRemoteData(payload.data || createEmptyData(), { ...payload.status, lastSyncAt: '' });
     await persistCurrentData();
@@ -2425,11 +2719,30 @@ async function logoutServer() {
     await persistLoginPrefs();
     await syncNativeLoginPreference({ username: '', password: '', rememberPassword: false });
     renderServerStatus();
-    refreshCaptcha();
     showToast('已退出登录');
   } catch (error) {
     showToast(error.message || '退出失败');
   }
+}
+
+async function resumeNativeSession() {
+  if (document.hidden || loginBusy) return;
+  if (wechatLoginLink) { resumeWechatLoginChecks(); return; }
+  if (nativeResumePromise) return nativeResumePromise;
+  if (Date.now() - lastNativeResumeAt < 2000) return;
+  lastNativeResumeAt = Date.now();
+  nativeResumePromise = (async () => {
+    // One foreground check, rather than simultaneous keep-alive, verify and
+    // sync requests from WebView visibility, Android App and WeChat callbacks.
+    await refreshServerStatus({ silent: true, check: true });
+    if (!state.server.loggedIn || state.server.connectionUncertain || wechatLoginLink || loginBusy) return;
+    const syncedAt = Date.parse(state.server.lastSyncAt || '');
+    if (!Number.isFinite(syncedAt) || Date.now() - syncedAt >= 5 * 60 * 1000) {
+      await syncNow({ silent: true });
+    }
+  })();
+  try { return await nativeResumePromise; }
+  finally { nativeResumePromise = null; }
 }
 
 function getLocalNotificationsPlugin() {
@@ -2833,7 +3146,19 @@ function buildScheduledNotifications() {
       });
   }
 
-  return notifications.slice(0, 64);
+  if (settings.examReminders) {
+    window.NJUSTInsights.examReminders(state.data.exams, now).forEach(reminder => {
+      notifications.push({
+        id: getNotificationId(`exam:${reminder.id}`),
+        title: `${reminder.label} · ${reminder.title}`,
+        body: reminder.body,
+        schedule: { at: new Date(reminder.notifyAt), allowWhileIdle: true },
+        extra: { type: 'exam', examName: reminder.name, eventAt: reminder.eventAt }
+      });
+    });
+  }
+
+  return notifications.sort((a, b) => a.schedule.at - b.schedule.at).slice(0, 64);
 }
 
 async function cancelScheduledNotifications(ids = getNotificationSettings().scheduledIds) {
@@ -2854,7 +3179,14 @@ async function persistNotificationSettings() {
   await dbSet('notificationSettings', state.notificationSettings);
 }
 
-async function scheduleNotifications({ silent = false } = {}) {
+let notificationScheduleQueue = Promise.resolve();
+function scheduleNotifications(options = {}) {
+  const job = notificationScheduleQueue.catch(() => {}).then(() => scheduleNotificationsNow(options));
+  notificationScheduleQueue = job;
+  return job;
+}
+
+async function scheduleNotificationsNow({ silent = false } = {}) {
   state.notificationSettings = getNotificationSettings();
   const settings = state.notificationSettings;
 
@@ -4224,6 +4556,7 @@ function renderExams() {
           ${exam.countdown === null ? '待定' : exam.countdown === 0 ? '今天' : exam.countdown > 0 ? `${escapeHtml(String(exam.countdown))} 天` : `已过 ${escapeHtml(String(Math.abs(exam.countdown)))} 天`}
         </div>
       </div>
+      ${window.NJUSTStudyFeatures?.examWarnings(exam) || ''}
     </div>
   `).join('');
 
@@ -4250,6 +4583,10 @@ function updateHeaderForPage(page = state.currentPage) {
 }
 
 function handleHeaderLeftAction() {
+  if (state.currentPage === 'library' && window.NJUSTLibrary?.hasDetail()) {
+    window.NJUSTLibrary.back();
+    return;
+  }
   if (isSubPage()) {
     navigate(state.pageBackTarget || 'home');
     return;
@@ -4993,7 +5330,9 @@ function renderSites() {
 }
 
 function renderSettings() {
+  window.NJUSTCampus?.renderSettings();
   applyColorTheme(state.colorTheme);
+  updateWechatLoginPanel();
   const loginGuide = document.getElementById('settings-login-guide');
   if (loginGuide) {
     loginGuide.innerHTML = buildSettingsLoginGuideHtml();
@@ -5002,7 +5341,7 @@ function renderSettings() {
   const loginPrefs = getLoginPrefs();
   const usernameInput = document.getElementById('login-username');
   if (usernameInput && !usernameInput.value) {
-    usernameInput.value = loginPrefs.username || state.server.username || '';
+    usernameInput.value = loginPrefs.username || (state.server.username === '微信授权用户' ? '' : state.server.username) || '';
   }
   const passwordInput = document.getElementById('login-password');
   if (passwordInput && !passwordInput.value && loginPrefs.rememberPassword && loginPrefs.password) {
@@ -5025,11 +5364,13 @@ function renderSettings() {
   const notifyEnabled = document.getElementById('notify-enabled');
   const notifyCourses = document.getElementById('notify-courses');
   const notifyTodos = document.getElementById('notify-todos');
+  const notifyExams = document.getElementById('notify-exams');
   const notifyGrades = document.getElementById('notify-grades');
   const notifyLeadMinutes = document.getElementById('notify-lead-minutes');
   if (notifyEnabled) notifyEnabled.checked = Boolean(settings.enabled);
   if (notifyCourses) notifyCourses.checked = Boolean(settings.courseReminders);
   if (notifyTodos) notifyTodos.checked = Boolean(settings.todoReminders);
+  if (notifyExams) notifyExams.checked = Boolean(settings.examReminders);
   if (notifyGrades) notifyGrades.checked = Boolean(settings.gradeReminders);
   if (notifyLeadMinutes) notifyLeadMinutes.value = String(settings.leadMinutes || DEFAULT_NOTIFICATION_SETTINGS.leadMinutes);
   renderNotificationStatus();
@@ -5062,6 +5403,7 @@ async function recoverNativeSessionAndSync({ silent = true } = {}) {
 }
 
 function renderCurrentPage() {
+  void window.NJUSTCampus?.syncOwner().catch(() => {});
   if (state.currentPage === 'home') renderHome();
   if (state.currentPage === 'schedule') renderSchedule(state.currentWeekday || getTodayWeekday());
   if (state.currentPage === 'grades') renderGrades();
@@ -5070,9 +5412,16 @@ function renderCurrentPage() {
   if (state.currentPage === 'sites') renderSites();
   if (state.currentPage === 'todos') renderTodos();
   if (state.currentPage === 'settings') renderSettings();
+  if (state.currentPage === 'library') window.NJUSTLibrary?.render();
+  if (state.currentPage === 'campus') void window.NJUSTCampus?.render();
+  window.NJUSTStudyFeatures?.render();
 }
 
+/** @maintenance
+ * 维护当前页面、活动导航和子页返回来源。这是应用内导航，不等同于浏览器 history；校园助手切换模块应直接重绘，不能再次覆盖 pageBackTarget。
+ */
 function navigate(page) {
+  if (state.currentPage === 'library' && page !== 'library') window.NJUSTLibrary?.leave();
   if (SUB_PAGES.includes(page)) {
     state.pageBackTarget = MAIN_PAGES.includes(state.currentPage) ? state.currentPage : 'home';
   }
@@ -5091,16 +5440,12 @@ function navigate(page) {
   renderCurrentPage();
 }
 
-function openCampusAuthShortcut() {
-  navigate('settings');
-  requestAnimationFrame(() => {
-    requestAnimationFrame(() => {
-      document.getElementById('settings-wifi-card')?.scrollIntoView({ behavior: 'smooth', block: 'start' });
-    });
-  });
-}
-
 async function refreshCurrentPage() {
+  if (state.currentPage === 'campus') {
+    try { await window.NJUSTCampus?.refreshRecords(); }
+    catch (error) { showToast(error.message || '本地记录刷新失败'); }
+    return;
+  }
   if (state.currentPage === 'classrooms') {
     try {
       await loadClassroomOptions({ campus: state.classrooms.campus, force: true, silent: true });
@@ -5165,6 +5510,7 @@ async function importData() {
 
   try {
     const previousGradeSignature = buildGradeSignature();
+    parsed = window.NJUSTStudyFeatures?.inspectRemote(parsed, { username: state.server.username, importing: true }) || parsed;
     const { merged, sections } = mergeImportedData(state.data, parsed);
     state.data = merged;
     if (Array.isArray(parsed.customCourses)) {
@@ -5180,7 +5526,7 @@ async function importData() {
       await dbSet('todos', state.todos);
     }
     state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || state.selectedWeek || 1);
-    await dbSet('main', state.data);
+    await persistCurrentData();
     await afterDataChanged({ previousGradeSignature });
     closeImportModal();
     renderCurrentPage();
@@ -5197,7 +5543,9 @@ async function saveSemesterStart() {
     showToast('请选择学期开始日期');
     return;
   }
-  state.data.meta.semesterStart = normalizeDateString(input);
+  try { await window.NJUSTCampus?.setDate(input); }
+  catch (error) { showToast(error.message || '日期保存失败'); return; }
+  state.data.meta.semesterStart = window.NJUSTCampus?.startFor(state.data.meta) || normalizeDateString(input);
   state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || 1);
   await dbSet('main', state.data);
   if (state.server.available) {
@@ -5219,7 +5567,7 @@ async function saveSemesterStart() {
 
 async function updateNotificationSetting(key, value) {
   const settings = getNotificationSettings();
-  if (['enabled', 'courseReminders', 'todoReminders', 'gradeReminders'].includes(key)) {
+  if (['enabled', 'courseReminders', 'todoReminders', 'examReminders', 'gradeReminders'].includes(key)) {
     settings[key] = Boolean(value);
   } else if (key === 'leadMinutes') {
     settings.leadMinutes = Math.max(1, Number.parseInt(value, 10) || DEFAULT_NOTIFICATION_SETTINGS.leadMinutes);
@@ -5252,6 +5600,7 @@ async function clearData() {
   await dbSet('customCourses', []);
   await dbSet('scheduleOverrides', []);
   await dbSet('todos', []);
+  await window.NJUSTStudyFeatures?.clearAudit();
   await persistNotificationSettings();
   await updateNativeWidgetData({ silent: true });
   renderCurrentPage();
@@ -5874,7 +6223,7 @@ function bindStaticEvents() {
     renderGrades();
   });
 
-  ['login-username', 'login-password', 'login-captcha'].forEach(id => {
+  ['login-username', 'login-password'].forEach(id => {
     const input = document.getElementById(id);
     input.addEventListener('keydown', event => {
       if (event.key === 'Enter') {
@@ -5882,15 +6231,6 @@ function bindStaticEvents() {
       }
     });
   });
-
-  const loginUsername = document.getElementById('login-username');
-  if (loginUsername) {
-    loginUsername.addEventListener('change', () => {
-      const captchaInput = document.getElementById('login-captcha');
-      if (captchaInput) captchaInput.value = '';
-      refreshCaptcha({ silent: true });
-    });
-  }
 
   const loginRemember = document.getElementById('login-remember');
   if (loginRemember) {
@@ -5918,6 +6258,9 @@ function bindStaticEvents() {
   });
 }
 
+/** @maintenance
+ * 初始化本机数据、主题、原生桥与页面事件。依赖加载次序见 index.html；不要在初始化阶段输出凭据或强制清除离线数据。
+ */
 async function init() {
   state.isStandalone = window.matchMedia('(display-mode: standalone)').matches || window.navigator.standalone === true;
   state.currentWeekday = getTodayWeekday();
@@ -5945,49 +6288,55 @@ async function init() {
     ...DEFAULT_NOTIFICATION_SETTINGS,
     ...((await dbGet('notificationSettings')) || {})
   };
+  await window.NJUSTCampus?.load(cached);
   state.data = normalizeData(cached);
+  await window.NJUSTStudyFeatures?.load();
   if (!state.notificationSettings.lastGradeSignature) {
     state.notificationSettings.lastGradeSignature = buildGradeSignature();
     await persistNotificationSettings();
   }
   state.selectedWeek = clampSelectedWeek(getCurrentWeek(state.data.meta.semesterStart) || 1);
+  if (isNativeSyncAvailable()) {
+    wechatLoginAttempt = window.NJUSTNativeSync.getPendingWechatLogin?.() || null;
+    wechatLoginLink = wechatLoginAttempt?.url || '';
+    try { getWechatBridge(); } catch {}
+    if (wechatLoginLink) {
+      startWechatLoginClock();
+      scheduleWechatLoginCheck();
+    }
+    updateWechatLoginPanel(wechatLoginLink ? '等待微信授权。请在微信中确认，返回后自动检查。' : '');
+  }
   await refreshServerStatus({ silent: true });
-  if (isNativeSyncAvailable() && (state.server.rememberPassword || state.server.credentialsSaved)) {
+  if (state.server.casCaptchaRequired) await refreshCasCaptcha();
+  if (isNativeSyncAvailable() && !wechatLoginLink && (state.server.username || state.server.rememberPassword || state.server.credentialsSaved)) {
     await recoverNativeSessionAndSync({ silent: true }).catch(() => {});
   }
   void refreshAppUpdateState({ silent: true, force: true });
   if (state.server.available) {
-    refreshCaptcha({ silent: true });
     if (isNativeSyncAvailable()) {
       window.setInterval(() => {
         if (document.hidden) return;
+        if (wechatLoginLink) return;
         if (state.server.loggedIn) {
           keepAliveNativeSession().catch(() => {});
-        } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+        } else if (state.server.username || state.server.rememberPassword || state.server.credentialsSaved) {
           recoverNativeSessionAndSync({ silent: true }).catch(() => {});
         }
       }, window.NJUSTNativeSync.keepAliveIntervalMs || 8 * 60 * 1000);
 
       window.setInterval(() => {
         if (document.hidden) return;
+        if (wechatLoginLink) return;
         if (state.server.loggedIn) {
           syncNow({ silent: true });
-        } else if (state.server.rememberPassword || state.server.credentialsSaved) {
+        } else if (state.server.username || state.server.rememberPassword || state.server.credentialsSaved) {
           recoverNativeSessionAndSync({ silent: true }).catch(() => {});
         }
       }, 10 * 60 * 1000);
 
       document.addEventListener('visibilitychange', () => {
         if (document.hidden) return;
-        if (state.server.loggedIn) {
-          keepAliveNativeSession().catch(() => {});
-          refreshServerStatus({ silent: true, check: true });
-          syncNow({ silent: true });
-          return;
-        }
-        if (state.server.rememberPassword || state.server.credentialsSaved) {
-          recoverNativeSessionAndSync({ silent: false }).catch(() => {});
-        }
+        void resumeNativeSession().catch(() => {});
       });
     } else {
       window.setInterval(() => {
@@ -6012,19 +6361,12 @@ async function init() {
       if (appPlugin) {
         appPlugin.addListener('appStateChange', ({ isActive }) => {
           if (!isActive) {
+            pauseWechatLoginChecks();
             scheduleNotifications({ silent: true }).catch(() => {});
             return;
           }
-          // Android may recreate the WebView after the process is reclaimed.
-          // Re-check here as well as on visibilitychange so restored encrypted
-          // credentials can rebuild a fresh teaching-system session.
-          if (state.server.loggedIn) {
-            keepAliveNativeSession().catch(() => {});
-            refreshServerStatus({ silent: true, check: true });
-            syncNow({ silent: true });
-          } else if (state.server.rememberPassword || state.server.credentialsSaved) {
-            recoverNativeSessionAndSync({ silent: false }).catch(() => {});
-          }
+          wechatLoginForeground = true;
+          void resumeNativeSession().catch(() => {});
         });
       }
     } catch {}
@@ -6034,6 +6376,7 @@ async function init() {
   await updateNativeWidgetData({ silent: true });
   renderSettings();
   navigate('home');
+  if (wechatLoginLink) void checkWechatLogin();
 }
 
 document.addEventListener('DOMContentLoaded', init);

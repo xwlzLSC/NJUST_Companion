@@ -1,3 +1,8 @@
+/** @maintenance
+ * DOM 版解析器用于浏览器、APK 与书签导入，不执行学校 HTML 中的脚本。
+ * 云函数的 lib/parser.js 使用 Cheerio，接口一致但 DOM 适配不同，不能整文件相互覆盖。
+ * 重点维护分段周次、同名课程的多次上课记录、考试完整日期；修改后运行对应回归测试。
+ */
 /**
  * 南理教务助手解析器
  * 供书签脚本、浏览器环境和后续原生壳复用
@@ -52,6 +57,9 @@ function readSemesterHint(doc) {
   return '';
 }
 
+/** @maintenance
+ * 将类似 4-5,8-12(周) 拆成两条同一上课安排，而不是把周次连成 4-12。保留原始 weekText，供完整性检查和展示核对。
+ */
 function expandScheduleWeeks(items) {
   return items.flatMap(item => {
     const text = String(item.weekText || '')
@@ -148,6 +156,9 @@ function splitCellValues(value) {
     .filter(Boolean);
 }
 
+/** @maintenance
+ * 解析学校时间描述中的星期和小节组合。一个课程可有多个时间段，不能仅匹配第一个星期或节次。
+ */
 function parseScheduleOccurrences(value) {
   return linesFromHtml(value)
     .flatMap(line => {
@@ -338,6 +349,9 @@ function parseModernScheduleGrid(doc) {
       }));
 }
 
+/** @maintenance
+ * 将明细表里的教师、地点、课程号与网格里的周次配对。合并键要包含上课时段，不能仅用课程名去重。
+ */
 function mergeModernSchedule(detailItems, gridItems) {
   if (!detailItems.length) return gridItems;
   if (!gridItems.length) return detailItems;
@@ -565,6 +579,9 @@ function parseLevelExams(doc) {
     .filter(item => item && item.name);
 }
 
+/** @maintenance
+ * 整理考试日期、时间、地点、座位等字段。待定信息保留待定状态，不能伪造日期，否则首页与提醒会误把已结束考试当作未来考试。
+ */
 function parseExams(doc) {
   const table = doc.querySelector('#dataList') || pickTable(doc);
   if (!table || !table.rows.length) return [];

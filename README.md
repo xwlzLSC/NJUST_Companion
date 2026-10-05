@@ -1,206 +1,80 @@
 # NJUST Companion / 南理教务助手
 
-一个面向南京理工大学学生的本地优先教务工具。它不是官方开放 API 客户端，而是登录学校教务系统后抓取页面，再把课表、成绩、考试、空闲教室等信息整理成更适合手机查看的界面。
+面向南京理工大学学生的本地优先课程工具，包含网页和 Capacitor Android 应用。登录使用**智慧理工统一认证账号、密码**，也支持学校微信授权的二维码与链接方式。数据来自学校页面解析，本项目不是学校官方客户端。
 
-## 应用内公告与更新提醒
+## 维护从这里开始
 
-应用启动时会读取仓库根目录的 `announcement.json`，并同时检查 GitHub Release 中的 `version.json`：
+- [维护手册](docs/MAINTENANCE.md)：目录职责、常见修改位置、共享副本、测试与清理恢复。
+- Android/Web 当前源码在本仓库；小程序是独立工程，当前本机位置为 `E:\NJUST_companion`。
+- `mobile-web/` 和 `android/app/src/main/assets/public/` 是生成目录，不是修改页面的入口。
+- 小程序工程中保留的 `NJUSTKB/` 是带独立 Git 历史的旧副本，不是当前 APK 源码。
+- 本次整理只归档确认无用的内容，不清空账号数据、签名、现用依赖或模型。
 
-- 修改 `announcement.json` 并推送到 `main`，已安装的客户端即可收到普通公告。
-- 将 `active` 设为 `false` 可停用当前公告；更换 `id` 会被视为一条新公告。
-- 通过 `.github/workflows/android-release.yml` 发布 APK 时，会自动生成带更新公告的 `version.json`；旧版本发现更高的 `versionCode` 后会弹窗提醒安装。
-- 更新提醒选择“稍后提醒”后会在 24 小时后再次出现；普通公告点击“知道了”后不再重复弹出。
+## 当前功能
 
-当前教务登录入口以学校实际可访问地址为准，默认适配的是 `http://202.119.81.113:8080/`。
+- 课表周视图、学期视图、分段周次、自定义课程、分享与 ICS 导出。
+- 成绩查询、统计、GPA 预测；考试时间、地点与倒计时。
+- 课表完整性检查、变更记录、考试提醒、提醒检查页。
+- 待办、空闲教室、常用网站；图书检索及馆藏位置、可借状态。
+- 官方校历图片放大查看、主修学业审查原始结果及未获得课程明细。
+- 离线缓存、手动/自动同步；Android 通知及桌面组件。
 
-## 最省事的托管后端
+校历只用于看图，**不识别或自动修改开学日期**。用户自定义日期优先，未设置时使用 `2026-08-24`；修改位置见维护手册。
 
-如果你没有自己的服务器，当前最省事的方案是把这个项目部署成一个 `Render` 托管的个人后端实例，再用 iPhone Safari “添加到主屏幕”。
+微信授权与账号密码登录有不同的恢复条件：可恢复有效会话，但微信授权不能产生可保存的密码。授权过期后需要重新确认，应用不能绕过学校微信授权流程。
 
-- **[最推荐] [iPhone 0 成本部署指南 (免费版)](./docs/iphone-free-guide.md)** —— 适合绝大多数个人用户，完全免费。
-- [Render 托管部署说明 (专业版)](./docs/render-deploy.md) —— 需要 Render 付费计划以支持磁盘持久化。
-- [iPhone 网页方式说明](./docs/iphone-webapp.md)
+## 本地网页开发
 
-需要明确一点：
-
-- 当前后端是 `单实例 / 单账号` 结构
-- 最适合“你自己部署、你自己使用”
-- 不适合直接公开成多人共用服务
-
-## 功能
-
-- 课表
-  - 周视图 / 学期视图切换
-  - 左右滑动切换周次
-  - 当前时间指示线
-  - 点击课程查看详情、学分、周次、地点、教师等信息
-  - 支持自定义课程
-  - 支持自定义背景图和课表分享长图
-  - 支持导出 ICS 日历
-- 成绩
-  - 按学期查看成绩
-  - 支持加权平均分、GPA、四六级成绩合并
-  - 支持勾选统计与 GPA 预测
-  - 支持把历史已修课程作为预测基线
-- 考试安排
-  - 展示考试时间、地点、座位号和倒计时
-- 空闲教室
-  - 按楼栋、日期、节次查询
-  - 支持节次多选
-  - 根据连续空闲节次和安静度自动推荐更适合自习的教室
-- 待办事件
-  - 可创建个人待办
-  - 支持关联课程
-  - 支持本地提醒
-- 常用网站
-  - 集成学校官网、教务处、图书馆、四六级、学习通等入口
-- 消息通知
-  - 可提醒下节课、待办事件和成绩更新
-  - 依赖安卓系统通知权限
-- 桌面组件
-  - 可把课程表、待办、考试或总览添加到安卓桌面小组件
-- 同步与缓存
-  - 登录后自动同步
-  - 支持会话保活
-  - 支持本地缓存和手动同步
-  - 安卓端支持自动恢复会话
-- 校园网认证
-  - 设置页提供校园网认证入口
-
-## 数据是怎么来的
-
-项目通过教务系统页面抓取数据，再由 [js/parser.js](./js/parser.js) 解析成结构化信息。
-
-整体流程是：
-
-1. 用户在应用内登录教务系统
-2. 程序请求课表、成绩、考试、空闲教室等页面
-3. 后端或安卓原生侧拿到 HTML
-4. 解析器提取课程、分数、学期、节次等字段
-5. 前端渲染为手机友好的页面
-
-如果学校页面结构调整，解析逻辑也需要跟着更新。
-
-## 本地运行
-
-安装依赖：
+需要 Node.js、Rust/Cargo；依赖版本以锁文件为准。
 
 ```bash
-npm install
-```
-
-启动本地服务：
-
-```bash
+npm ci
 npm start
 ```
 
-打开浏览器：
+访问 `http://127.0.0.1:3030`。
 
-```text
-http://127.0.0.1:3030
-```
+- `npm start` 默认启动 `rust-server/`，由 `scripts/run-rust.cjs` 定位工具链。
+- `npm run start:node-legacy` 才启动兼容保留的 `server.js`。
+- APK 使用本机原生联网能力，不要求手机连接电脑上的 3030 服务。
+- 网页后端是个人单实例会话，不要作为多人共用的公开教务代理。
 
-浏览器模式下：
+本机现用的 `.rustup/`、`node_modules/` 及 `storage/` 不属于无用文件。
 
-- 前端由 [index.html](./index.html) 和 [js/app.js](./js/app.js) 驱动
-- 本地代理服务由 [server.js](./server.js) 提供
-- 已同步的数据会保存在本地，刷新页面后仍可查看
-
-## 安卓打包
-
-项目使用 Capacitor 封装安卓壳。
-
-生成安卓网页资源：
+## 检查与构建
 
 ```bash
-npm run build:android:web
-```
-
-同步到 Android 工程：
-
-```bash
+npm test
+npm run test:all
+npm run check:projects
+npm run check
 npm run android:sync
-```
-
-打调试包：
-
-```bash
 npm run apk:debug
 ```
 
-打正式签名包：
+- `npm test` 自动跳过缺少小程序工程时无法运行的跨端测试；`test:all` 要求两端都在。
+- 换电脑时可用 `NJUST_MINI_ROOT` 指定小程序工程根目录。路径示例见维护手册。
+- `check:projects` 检查注册路径、语法、相对依赖、共享副本和云函数锁文件；不连接学校。
+- `android:sync` 会从根目录源码重建网页资源；请不要在生成目录里放个人文件。
+- `apk:debug` 需要 Android SDK 和 JDK 21，生成 `android/app/build/outputs/apk/debug/app-debug.apk`。
+- `npm run apk:release` 使用正式签名配置；发布说明见 [安卓正式版与覆盖更新](docs/android-release.md)。覆盖安装必须保持相同签名。
 
-```bash
-npm run apk:release
-```
+## 公告与版本发布
 
-APK 输出路径：
+- 修改根目录 `announcement.json` 并推送后，客户端可收到普通公告；`active: false` 停用，更换 `id` 表示新公告。
+- `.github/workflows/android-release.yml` 发布时生成 `version.json`，使用递增的 `versionCode` 检查更新。
+- 正式发布签名保存在本机私有配置或 GitHub Secrets，不应提交密钥文件、密码或 Cookie。
+- 本次工程整理不自动推送、发版、部署云函数，也不改版本号。
 
-```text
-android/app/build/outputs/apk/debug/app-debug.apk
-```
+## 其他说明
 
-## 主要脚本
+- [校历与主修学业审查](docs/CAMPUS_ASSISTANT.md)
+- [图书检索](docs/LIBRARY_SEARCH.md)
+- [完整性检查、变更与提醒](docs/STUDY_FEATURES.md)
+- [APK 微信授权](docs/APK_WECHAT_LOGIN.md)
+- [二维码存储与 APK 检查](docs/QR_STORAGE_AND_APK_CHECK.md)
+- [Rust 后端](docs/rust-backend.md)
 
-- `npm start`
-  - 启动本地 Node 服务
-- `npm run check`
-  - 校验关键运行时代码语法
-- `npm run build:android:web`
-  - 生成给 Capacitor 使用的前端资源
-- `npm run android:sync`
-  - 同步前端资源到安卓工程
-- `npm run apk:debug`
-  - 构建安卓调试包
-- `npm run apk:release`
-  - 构建安卓正式签名包
+部署与早期方案文档仍保留在 `docs/` 供参考；默认启动方式、当前功能及维护入口以本 README 和维护手册为准。第三方库、OCR 模型和许可证保持原样。
 
-## 目录结构
-
-```text
-.
-├─ android/              Capacitor Android 工程
-├─ css/                  页面样式
-├─ docs/                 说明文档
-├─ icons/                图标资源
-├─ js/                   前端主逻辑与解析器
-├─ scripts/              构建脚本
-├─ index.html            页面入口
-├─ server.js             本地 Node 服务
-├─ manifest.json         PWA 配置
-├─ sw.js                 Service Worker
-└─ package.json
-```
-
-## 自动同步与限制
-
-当前实现支持：
-
-- 自动同步
-- 会话保活
-- 安卓端会话恢复
-- 课程、成绩、考试、空闲教室、本地待办的统一管理
-
-但仍然要注意：
-
-- 学校系统不是开放 API，页面结构一变就可能失效
-- 清理后台、系统回收进程后，登录状态是否能保留取决于设备和系统策略
-- 如果教务入口、验证码或表单字段调整，解析器和同步逻辑需要同步适配
-
-## 文档
-
-- [Render 托管部署说明](./docs/render-deploy.md)
-- [安卓正式版与覆盖更新](./docs/android-release.md)
-- [服务器部署说明](./docs/deploy-server.md)
-- [iPhone 网页方式说明](./docs/iphone-webapp.md)
-
-## 安全与使用说明
-
-- 建议仅用于个人学习和教务信息整理
-- 不要把带登录态的本地缓存、调试数据或真实账号信息上传到公开仓库
-- 如果准备公开发布，先检查 `storage/`、`.env` 和本地调试文件是否已经被忽略
-
-## 免责声明
-
-本项目与学校官方无关，仅作为个人学习和教务信息整理工具使用。请自行评估使用场景、账号安全和相关规则要求。
+本项目仅用于个人学习和教务信息整理。学校页面或认证机制变化时需要重新适配，请勿公开真实账号、带登录态的调试文件及缓存。

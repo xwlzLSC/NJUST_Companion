@@ -6,12 +6,15 @@ rust-version = "1.85"
 
 [dependencies]
 anyhow = "1.0"
+aes = "0.8"
 base64 = "0.22"
 axum = "0.8"
+cbc = "0.1"
 chrono = { version = "0.4", features = ["serde"] }
 encoding_rs = "0.8"
 keyring = { version = "3.6", features = ["windows-native"] }
 regex = "1.11"
+rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["brotli", "cookies", "deflate", "gzip", "http2", "json", "rustls-tls"] }
 scraper = "0.22"
 serde = { version = "1.0", features = ["derive"] }

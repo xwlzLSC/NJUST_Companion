@@ -1,3 +1,8 @@
+/** @maintenance
+ * Node 兼容后端，通过 npm run start:node-legacy 显式启动；默认 npm start 启动 Rust 后端。
+ * 提供与网页共用的 API、学校会话和静态资源。当前为个人单账号代理，不是面向多人共用的账号服务。
+ * 学校协议改动必须与 Rust/Android/小程序契约一起核对；不可将 .env、storage 或签名目录作为静态网站发布。
+ */
 const fsSync = require('node:fs');
 const fs = require('node:fs/promises');
 const path = require('node:path');
@@ -10,6 +15,7 @@ const iconv = require('iconv-lite');
 const Tesseract = require('tesseract.js');
 const Jimp = require('jimp');
 const parser = require('./js/parser.js');
+const { requestLibrary } = require('./integrations/library/server.cjs');
 
 const ROOT_DIR = __dirname;
 loadEnvFile(path.join(ROOT_DIR, '.env'));
@@ -1356,6 +1362,24 @@ app.get('/api/classrooms/options', async (req, res) => {
   }
 });
 
+app.get('/api/academic-review', async (req, res) => {
+  try {
+    const expectedOwner = buildStatus().username;
+    const entry = await fetchSectionPage('主修学业审查', 'xsxj/zxsc.do');
+    const doc = createDocument(entry.html);
+    const rows = [...doc.querySelectorAll('tr')].slice(0, 256).map(row => [...row.children]
+      .filter(cell => /^(TD|TH)$/.test(cell.tagName)).map(cell => {
+        const clone = cell.cloneNode(true); clone.querySelectorAll('script,style').forEach(node => node.remove());
+        clone.querySelectorAll('br').forEach(node => node.replaceWith('\n'));
+        return String(clone.textContent || '').trim().slice(0, 12000);
+      })).filter(row => row.length > 1 && row.length <= 16);
+    const fetchedAt = new Date().toISOString(), owner = buildStatus().username;
+    if (expectedOwner !== owner) throw Error('登录账号已变化，请重新打开学业审查');
+    const core = require('./js/campus-core'); core.checkOwner(core.parseReviewRows(rows, fetchedAt), owner);
+    res.json({ ok: true, rows, fetchedAt, owner, status: buildStatus() });
+  } catch (error) { res.status(400).json({ ok: false, error: error.message }); }
+});
+
 app.post('/api/classrooms/query', async (req, res) => {
   try {
     const result = await queryClassrooms(req.body || {});
@@ -1364,6 +1388,13 @@ app.post('/api/classrooms/query', async (req, res) => {
     res.status(400).json({ ok: false, error: error.message, status: buildStatus() });
   }
 });
+
+for (const action of ['search', 'detail']) {
+  app.get('/api/library/' + action, async (req, res) => {
+    try { res.json(await requestLibrary(action, req.query)); }
+    catch (error) { res.status(400).json({ ok: false, error: error.message }); }
+  });
+}
 
 app.use(express.static(ROOT_DIR, { extensions: ['html'] }));
 

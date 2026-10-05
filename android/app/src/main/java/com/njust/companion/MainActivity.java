@@ -10,6 +10,11 @@ import android.webkit.WebView;
 
 import com.getcapacitor.BridgeActivity;
 
+/**
+ * Android 壳入口：注册网页会调用的原生插件，再交给 Capacitor 创建 WebView。
+ * 插件注册名必须与 js/native-sync.js、js/app.js 中的 registerPlugin 名称一致。
+ * 升级迁移只刷新网页资源缓存，不删除用户的 IndexedDB、登录凭据或离线课表。
+ */
 public class MainActivity extends BridgeActivity {
     private static final String PREFS_NAME = "njust_runtime";
     private static final String KEY_LAST_RUNTIME_VERSION = "last_runtime_version_code";
@@ -19,10 +24,13 @@ public class MainActivity extends BridgeActivity {
         registerPlugin(AppUpdatePlugin.class);
         registerPlugin(NJUSTWidgetPlugin.class);
         registerPlugin(SecureCredentialsPlugin.class);
+        registerPlugin(SchoolSessionPlugin.class);
+        registerPlugin(WechatBridgePlugin.class);
         super.onCreate(savedInstanceState);
         migrateWebRuntimeOnAppUpgrade();
     }
 
+    /** 新 versionCode 安装后清理旧 Service Worker/静态缓存，防止仍显示上版 UI。 */
     private void migrateWebRuntimeOnAppUpgrade() {
         long currentVersionCode = getCurrentVersionCode();
         if (currentVersionCode <= 0) {
